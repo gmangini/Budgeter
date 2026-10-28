@@ -12,8 +12,8 @@ Just me. Runs unattended on a cloud Linux machine; I see it as SMS on my phone a
 
 ## Acceptance criteria
 - [x] AC-1: Given a SimpleFIN setup token, when I run `claim` and then `balances`, then each linked card shows its name, balance and as-of time, and the access URL is saved to `.env` without being printed.
-- [ ] AC-2: Given at least one month of transaction history, when I run `budget propose`, then Sonnet prints monthly limits per category with the spending they were based on, and nothing takes effect yet.
-- [ ] AC-3: Given a proposed budget, when I run `budget approve` (optionally after editing `budget.json`), then that budget becomes the active one and `budget show` lists each category's limit, spent so far this month and what's left.
+- [x] AC-2: Given at least one month of transaction history, when I run `budget propose`, then Sonnet prints monthly limits per category with the spending they were based on, and nothing takes effect yet.
+- [x] AC-3: Given a proposed budget, when I run `budget approve` (optionally after editing `budget.json`), then that budget becomes the active one and `budget show` lists each category's limit, spent so far this month and what's left.
 - [ ] AC-4: Given the app is running in `watch` mode, when SimpleFIN returns a posted purchase it hasn't seen before, then I get one SMS with the amount, merchant, its category, what's left in that category this month, and a one-line comment.
 - [ ] AC-5: Given a purchase categorized as bars, when its SMS is written, then the comment is harsh and profanity is allowed, and it gets harsher the further bars is over its monthly pace.
 - [ ] AC-6: Given a purchase in another discretionary category (takeout, shopping, entertainment, etc.), when its SMS is written, then the comment is sassy but not vicious; essentials (groceries, gas, bills, health) get a plain, no-roast message.

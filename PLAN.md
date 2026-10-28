@@ -7,7 +7,7 @@ Spec: [SPEC.md](SPEC.md) · Stack skill: `as-app-core`
 | Id | Goal (what the user can do after it) | ACs | Status | Base commit |
 |---|---|---|---|---|
 | S1 | Pilot: claim a SimpleFIN token into .env and list card balances | AC-1 | done | d9f872b |
-| S2 | Sonnet categorizes history and proposes a budget; approve and show it | AC-2, AC-3 | todo | |
+| S2 | Sonnet categorizes history and proposes a budget; approve and show it | AC-2, AC-3 | done | b2de839 |
 | S3 | `watch` polls every 2h and texts each new purchase (plain SMS via Twilio) | AC-4, AC-7, AC-8, AC-9, AC-12 | todo | |
 | S4 | Roast personality: harsh at bars, sassy elsewhere, plain for essentials; fallback if Sonnet fails | AC-5, AC-6, AC-10 | todo | |
 | S5 | Run it on the cloud machine as a service that survives restarts | AC-12 | todo | |

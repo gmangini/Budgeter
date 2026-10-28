@@ -2,30 +2,50 @@
 using Budgeter;
 
 const string AccessKey = "SIMPLEFIN_ACCESS_URL";
-var envPath = Path.Combine(Directory.GetCurrentDirectory(), ".env");
-var command = args.FirstOrDefault(a => !a.StartsWith("--")) ?? "balances";
+var root = Directory.GetCurrentDirectory();
+var envPath = Path.Combine(root, ".env");
+var dataDir = Path.Combine(root, "data");
+var positional = args.Where(a => !a.StartsWith("--")).ToArray();
+var command = positional.FirstOrDefault() ?? "balances";
+var sub = positional.Skip(1).FirstOrDefault();
 var sample = args.Contains("--sample");
+var usd = CultureInfo.GetCultureInfo("en-US");
+
+// .env values become environment variables, so the Anthropic SDK finds ANTHROPIC_API_KEY.
+var env = EnvFile.Read(envPath);
+foreach (var (key, value) in env)
+    if (Environment.GetEnvironmentVariable(key) is null) Environment.SetEnvironmentVariable(key, value);
 
 using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
 var client = new SimpleFinClient(http);
 
 try
 {
-    switch (command)
+    switch (command, sub)
     {
-        case "claim":
+        case ("claim", _):
             await Claim();
             break;
-        case "balances":
+        case ("balances", _):
             await Balances();
             break;
+        case ("budget", "propose"):
+            await Propose();
+            break;
+        case ("budget", "approve"):
+            Approve();
+            break;
+        case ("budget", "show" or null):
+            await Show();
+            break;
         default:
-            Console.WriteLine("Usage: budgeter [claim | balances] [--sample]");
+            Console.WriteLine("Usage: budgeter [claim | balances | budget propose | budget approve | budget show] [--sample]");
             return 2;
     }
     return 0;
 }
-catch (Exception ex) when (ex is InvalidOperationException or FormatException or HttpRequestException)
+catch (Exception ex) when (ex is InvalidOperationException or FormatException or HttpRequestException
+                               or Anthropic.Exceptions.AnthropicException)
 {
     Console.Error.WriteLine($"Error: {ex.Message}");
     return 1;
@@ -33,7 +53,7 @@ catch (Exception ex) when (ex is InvalidOperationException or FormatException or
 
 async Task Claim()
 {
-    if (EnvFile.Read(envPath).ContainsKey(AccessKey))
+    if (env.ContainsKey(AccessKey))
     {
         Console.Write($"{AccessKey} is already in .env. Replace it? [y/N] ");
         if (!string.Equals(Console.ReadLine()?.Trim(), "y", StringComparison.OrdinalIgnoreCase)) return;
@@ -47,22 +67,8 @@ async Task Claim()
 
 async Task Balances()
 {
-    AccountSet set;
-    if (sample)
-    {
-        set = SimpleFinClient.ParseAccounts(
-            File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "sample-accounts.json")));
-    }
-    else
-    {
-        if (!EnvFile.Read(envPath).TryGetValue(AccessKey, out var accessUrl))
-            throw new InvalidOperationException(
-                $"No {AccessKey} in .env. Run: dotnet run --project src/Budgeter -- claim");
-        set = await client.GetAccountsAsync(accessUrl);
-    }
-
+    var set = await LoadAccounts("sample-accounts.json", start: null);
     foreach (var error in set.Errors ?? []) Console.WriteLine($"! {error}");
-    var usd = CultureInfo.GetCultureInfo("en-US");
     foreach (var account in set.Accounts.OrderBy(a => a.Org.Name).ThenBy(a => a.Name))
     {
         var asOf = DateTimeOffset.FromUnixTimeSeconds(account.BalanceDate).LocalDateTime;
@@ -70,6 +76,85 @@ async Task Balances()
             $"{account.Org.Name ?? account.Org.Domain,-20} {account.Name,-30} " +
             $"{account.BalanceAmount.ToString("C", usd),14}  as of {asOf:MMM d h:mm tt}");
     }
+}
+
+async Task Propose()
+{
+    var (purchases, categories, now) = await LoadHistory(now => now.AddDays(-90));
+    var plan = await new BudgetPlanner(Llm()).ProposeAsync(purchases, categories, now);
+    var store = new BudgetStore(dataDir);
+    store.SaveProposed(plan);
+
+    Console.WriteLine($"Proposed monthly budget (based on {plan.BasedOnMonths} full month(s)):\n");
+    Console.WriteLine($"{"Category",-15} {"Average",10} {"Limit",10}  Note");
+    foreach (var c in plan.Categories)
+        Console.WriteLine($"{c.Category,-15} {c.AverageSpent.ToString("C0", usd),10} {c.Limit.ToString("C0", usd),10}  {c.Note}");
+    Console.WriteLine($"{"Total",-15} {plan.Categories.Sum(c => c.AverageSpent).ToString("C0", usd),10} " +
+                      $"{plan.Categories.Sum(c => c.Limit).ToString("C0", usd),10}");
+    Console.WriteLine($"\n{plan.Summary}");
+    Console.WriteLine($"\nNothing is active yet. Edit {Path.GetRelativePath(root, store.ProposedPath)} if you like, " +
+                      "then run: budget approve");
+}
+
+void Approve()
+{
+    var plan = new BudgetStore(dataDir).Approve();
+    Console.WriteLine($"Budget approved: {plan.Categories.Count} categories, " +
+                      $"{plan.Categories.Sum(c => c.Limit).ToString("C0", usd)} a month. Run: budget show");
+}
+
+async Task Show()
+{
+    var plan = new BudgetStore(dataDir).Active
+               ?? throw new InvalidOperationException("No active budget. Run: budget propose, then budget approve");
+    var (purchases, categories, now) = await LoadHistory(MonthStart);
+    var rows = BudgetPlanner.Status(plan, purchases, categories, now);
+
+    Console.WriteLine($"{now.ToLocalTime():MMMM yyyy}, day {now.ToLocalTime().Day}\n");
+    Console.WriteLine($"{"Category",-15} {"Limit",10} {"Spent",10} {"Left",10}");
+    foreach (var r in rows.OrderBy(r => r.Left))
+        Console.WriteLine($"{r.Category,-15} {r.Limit.ToString("C0", usd),10} {r.Spent.ToString("C0", usd),10} " +
+                          $"{r.Left.ToString("C0", usd),10}{(r.Left < 0 ? "  over" : "")}");
+    Console.WriteLine($"{"Total",-15} {rows.Sum(r => r.Limit).ToString("C0", usd),10} " +
+                      $"{rows.Sum(r => r.Spent).ToString("C0", usd),10} {rows.Sum(r => r.Left).ToString("C0", usd),10}");
+}
+
+async Task<(List<Purchase>, IReadOnlyDictionary<string, string>, DateTimeOffset)> LoadHistory(
+    Func<DateTimeOffset, DateTimeOffset> startFrom)
+{
+    var now = DateTimeOffset.Now;
+    var purchases = Purchase.From(await LoadAccounts("sample-history.json", startFrom(now)));
+    if (sample && purchases.Count > 0)
+    {
+        // Sample data is fixed in time, so "now" is just after its last purchase.
+        now = purchases.Max(p => p.Posted).AddHours(1);
+        purchases = purchases.Where(p => p.Posted >= startFrom(now)).ToList();
+    }
+    var categories = await new Categorizer(Llm(), Path.Combine(dataDir, "categories.json"))
+        .CategorizeAsync(purchases.Select(p => p.Description));
+    return (purchases, categories, now);
+}
+
+async Task<AccountSet> LoadAccounts(string sampleFile, DateTimeOffset? start)
+{
+    if (sample)
+        return SimpleFinClient.ParseAccounts(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, sampleFile)));
+    if (!env.TryGetValue(AccessKey, out var accessUrl))
+        throw new InvalidOperationException($"No {AccessKey} in .env. Run: dotnet run --project src/Budgeter -- claim");
+    return await client.GetAccountsAsync(accessUrl, start);
+}
+
+static DateTimeOffset MonthStart(DateTimeOffset now)
+{
+    var local = now.ToLocalTime();
+    return new DateTimeOffset(local.Year, local.Month, 1, 0, 0, 0, local.Offset);
+}
+
+ILlm Llm()
+{
+    if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")))
+        throw new InvalidOperationException("No ANTHROPIC_API_KEY in .env.");
+    return new ClaudeClient(Environment.GetEnvironmentVariable("BUDGETER_MODEL") ?? "claude-sonnet-5-5");
 }
 
 static string ReadHidden()

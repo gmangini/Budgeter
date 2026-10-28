@@ -7,3 +7,4 @@ obj/
 *.user
 TestResults/
 data/
+artifacts/

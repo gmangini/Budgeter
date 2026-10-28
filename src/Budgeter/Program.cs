@@ -158,11 +158,12 @@ async Task Watch()
             Console.WriteLine($"{DateTime.Now:MMM d h:mm tt}: {result.NewPurchases} new purchase(s), " +
                               $"{result.Sent} text(s) sent, {result.Pending} waiting to retry.");
         }
-        catch (Exception ex) when (!once && ex is HttpRequestException or InvalidOperationException
-                                       or Anthropic.Exceptions.AnthropicException)
+        catch (Exception ex) when (!once && ex is not OperationCanceledException)
         {
-            // Keep watching: a SimpleFIN or Sonnet hiccup shouldn't stop the service.
-            Console.Error.WriteLine($"{DateTime.Now:MMM d h:mm tt}: check failed, will retry: {ex.Message}");
+            // Keep watching through any failure: crashing would make the service restart and poll SimpleFIN
+            // again right away, and a crash loop would burn through the Bridge's daily limit.
+            Console.Error.WriteLine(
+                $"{DateTime.Now:MMM d h:mm tt}: check failed, will retry in 2 hours: {ex.GetType().Name}: {ex.Message}");
         }
         if (once) return;
         replay = 0;

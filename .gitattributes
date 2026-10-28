@@ -1,0 +1,4 @@
+# Shell scripts and the systemd unit run on Linux.
+deploy/budgeter text eol=lf
+deploy/*.sh text eol=lf
+deploy/*.service text eol=lf

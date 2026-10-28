@@ -1,0 +1,29 @@
+# systemd unit for `budgeter watch`. Installed by Deploy-Budgeter.ps1 to /etc/systemd/system/budgeter.service.
+[Unit]
+Description=Budgeter: text each new credit card purchase
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=budgeter
+Group=budgeter
+# .env and data/ live here; the app reads both from its working directory.
+WorkingDirectory=/opt/budgeter
+ExecStart=/opt/budgeter/app/Budgeter watch
+# "This month" must roll over at local midnight, not UTC. Replaced at deploy with your time zone.
+Environment=TZ=__TIMEZONE__
+Environment=DOTNET_CLI_TELEMETRY_OPTOUT=1
+Restart=always
+# A slow restart: watch itself waits out the 2-hour SimpleFIN interval, this just avoids a tight crash loop.
+RestartSec=5min
+
+# Lock it down: it only needs to write its own folder.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/budgeter/data
+
+[Install]
+WantedBy=multi-user.target

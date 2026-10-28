@@ -1,0 +1,6 @@
+#!/bin/sh
+# Run any budgeter command on the server as the service user, e.g. `budgeter budget show`.
+# Installed by Deploy-Budgeter.ps1 to /usr/local/bin/budgeter.
+cd /opt/budgeter || exit 1
+exec sudo -u budgeter env TZ="$(systemctl show budgeter -p Environment --value | tr ' ' '\n' | sed -n 's/^TZ=//p')" \
+  /opt/budgeter/app/Budgeter "$@"

@@ -1,0 +1,28 @@
+{
+  "errors": [],
+  "accounts": [
+    {
+      "org": { "domain": "chase.com", "name": "Chase" },
+      "id": "acct-sapphire",
+      "name": "Sapphire Preferred",
+      "currency": "USD",
+      "balance": "-1243.57",
+      "available-balance": "8756.43",
+      "balance-date": 1793116800,
+      "transactions": [
+        { "id": "t1", "posted": 1793030400, "amount": "-84.00", "description": "O'MALLEY'S PUB", "pending": false },
+        { "id": "t2", "posted": 1793044800, "amount": "-12.49", "description": "CHIPOTLE 1234", "pending": false }
+      ]
+    },
+    {
+      "org": { "domain": "chase.com", "name": "Chase" },
+      "id": "acct-freedom",
+      "name": "Freedom Unlimited",
+      "currency": "USD",
+      "balance": "-312.10",
+      "available-balance": "4687.90",
+      "balance-date": 1793116800,
+      "transactions": []
+    }
+  ]
+}

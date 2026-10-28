@@ -3,18 +3,31 @@ using System.Text.Json;
 
 namespace Budgeter;
 
-/// <summary>A card purchase: a posted charge, with the amount as a positive number.</summary>
+/// <summary>
+/// A posted card transaction that counts as spending: a charge (positive <see cref="Amount"/>) or a refund
+/// (negative, so it lowers its category's total).
+/// </summary>
 public sealed record Purchase(string Id, DateTimeOffset Posted, string Description, decimal Amount)
 {
-    /// <summary>Posted charges only. Payments, refunds and pending holds are left out (refunds come in S3).</summary>
+    public bool IsRefund => Amount < 0;
+
+    /// <summary>Posted charges and refunds. Card payments and pending holds are left out.</summary>
     public static List<Purchase> From(AccountSet set) =>
         set.Accounts
             .SelectMany(a => a.Transactions ?? [])
             .Where(t => t.Pending != true)
             .Select(t => (t, amount: decimal.Parse(t.Amount, CultureInfo.InvariantCulture)))
-            .Where(x => x.amount < 0)
+            .Where(x => x.amount < 0 || !IsCardPayment(x.t.Description))
             .Select(x => new Purchase(x.t.Id, DateTimeOffset.FromUnixTimeSeconds(x.t.Posted), x.t.Description, -x.amount))
+            .Where(p => p.Amount != 0)
             .ToList();
+
+    /// <summary>A credit that pays the card down, as opposed to a refund from a merchant.</summary>
+    public static bool IsCardPayment(string description)
+    {
+        var d = description.ToUpperInvariant();
+        return d.Contains("PAYMENT") || d.Contains("PYMT") || d.Contains("AUTOPAY") || d.Contains("THANK YOU");
+    }
 }
 
 public sealed record CategoryLimit(string Category, decimal Limit, decimal AverageSpent, string Note);

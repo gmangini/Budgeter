@@ -17,9 +17,9 @@ Just me. Runs unattended on a cloud Linux machine; I see it as SMS on my phone a
 - [ ] AC-4: Given the app is running in `watch` mode, when SimpleFIN returns a posted purchase it hasn't seen before, then I get one SMS with the amount, merchant, its category, what's left in that category this month, and a one-line comment.
 - [ ] AC-5: Given a purchase categorized as bars, when its SMS is written, then the comment is harsh and profanity is allowed, and it gets harsher the further bars is over its monthly pace.
 - [ ] AC-6: Given a purchase in another discretionary category (takeout, shopping, entertainment, etc.), when its SMS is written, then the comment is sassy but not vicious; essentials (groceries, gas, bills, health) get a plain, no-roast message.
-- [ ] AC-7: Given `watch` starts for the first time, when it reads existing history, then it marks those transactions as seen and sends no texts for them.
-- [ ] AC-8: Given a transaction already texted, when it shows up again in a later poll (or after a restart), then no second SMS is sent.
-- [ ] AC-9: Given a payment to the card or a refund, when `watch` sees it, then no SMS is sent; a refund lowers that category's spent amount.
+- [x] AC-7: Given `watch` starts for the first time, when it reads existing history, then it marks those transactions as seen and sends no texts for them.
+- [x] AC-8: Given a transaction already texted, when it shows up again in a later poll (or after a restart), then no second SMS is sent.
+- [x] AC-9: Given a payment to the card or a refund, when `watch` sees it, then no SMS is sent; a refund lowers that category's spent amount.
 - [ ] AC-10: Given Sonnet fails or times out, when a purchase needs a text, then a plain SMS without the comment is sent instead; given Twilio fails, then the text is retried on the next poll and not lost.
 - ~~AC-11~~ dropped: no quiet hours; a bar roast is only useful while I'm still at the bar.
 - [ ] AC-12: Given the app runs on the cloud machine, when it polls, then it calls SimpleFIN at most once every 2 hours (within the Bridge's daily limit) and keeps running across restarts.

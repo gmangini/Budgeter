@@ -4,11 +4,12 @@ using Budgeter;
 const string AccessKey = "SIMPLEFIN_ACCESS_URL";
 var root = Directory.GetCurrentDirectory();
 var envPath = Path.Combine(root, ".env");
-var dataDir = Path.Combine(root, "data");
+var sample = args.Contains("--sample");
+// Sample runs keep their own state, so they never mix with real budgets or watch history.
+var dataDir = sample ? Path.Combine(root, "data", "sample") : Path.Combine(root, "data");
 var positional = args.Where(a => !a.StartsWith("--")).ToArray();
 var command = positional.FirstOrDefault() ?? "balances";
 var sub = positional.Skip(1).FirstOrDefault();
-var sample = args.Contains("--sample");
 var usd = CultureInfo.GetCultureInfo("en-US");
 
 // .env values become environment variables, so the Anthropic SDK finds ANTHROPIC_API_KEY.
@@ -38,8 +39,11 @@ try
         case ("budget", "show" or null):
             await Show();
             break;
+        case ("watch", _):
+            await Watch();
+            break;
         default:
-            Console.WriteLine("Usage: budgeter [claim | balances | budget propose | budget approve | budget show] [--sample]");
+            Console.WriteLine("Usage: budgeter [claim | balances | budget propose | budget approve | budget show | watch [--print] [--once] [--replay N]] [--sample]");
             return 2;
     }
     return 0;
@@ -117,6 +121,67 @@ async Task Show()
                           $"{r.Left.ToString("C0", usd),10}{(r.Left < 0 ? "  over" : "")}");
     Console.WriteLine($"{"Total",-15} {rows.Sum(r => r.Limit).ToString("C0", usd),10} " +
                       $"{rows.Sum(r => r.Spent).ToString("C0", usd),10} {rows.Sum(r => r.Left).ToString("C0", usd),10}");
+}
+
+async Task Watch()
+{
+    var print = args.Contains("--print");
+    var once = args.Contains("--once");
+    var replayIndex = Array.IndexOf(args, "--replay");
+    var replay = replayIndex >= 0 && replayIndex + 1 < args.Length ? int.Parse(args[replayIndex + 1]) : 0;
+    ISmsSender sms = print ? new PrintSmsSender(Console.Out) : Twilio();
+    var watcher = new Watcher(
+        start => LoadAccounts("sample-history.json", start),
+        new Categorizer(Llm(), Path.Combine(dataDir, "categories.json")),
+        new BudgetStore(dataDir),
+        sms,
+        Path.Combine(dataDir, "watch-state.json"));
+
+    Console.WriteLine($"Watching for new purchases ({(print ? "print mode, nothing is texted" : "texting via Twilio")}).");
+    while (true)
+    {
+        // Sample data is fixed in time, so a sample run behaves as if it's just after the last purchase.
+        var now = sample ? SampleNow() : DateTimeOffset.Now;
+        var lastPoll = WatchState.Load(Path.Combine(dataDir, "watch-state.json")).LastPoll;
+        if (!once && lastPoll is not null && DateTimeOffset.Now - lastPoll < Watcher.MinInterval)
+        {
+            // After a restart, wait out the rest of the interval instead of polling SimpleFIN early.
+            var wait = lastPoll.Value + Watcher.MinInterval - DateTimeOffset.Now;
+            Console.WriteLine($"Next check at {DateTime.Now + wait:h:mm tt}.");
+            await Task.Delay(wait);
+            continue;
+        }
+        try
+        {
+            var result = await watcher.PollOnceAsync(now, replay);
+            Console.WriteLine($"{DateTime.Now:MMM d h:mm tt}: {result.NewPurchases} new purchase(s), " +
+                              $"{result.Sent} text(s) sent, {result.Pending} waiting to retry.");
+        }
+        catch (Exception ex) when (!once && ex is HttpRequestException or InvalidOperationException
+                                       or Anthropic.Exceptions.AnthropicException)
+        {
+            // Keep watching: a SimpleFIN or Sonnet hiccup shouldn't stop the service.
+            Console.Error.WriteLine($"{DateTime.Now:MMM d h:mm tt}: check failed, will retry: {ex.Message}");
+        }
+        if (once) return;
+        replay = 0;
+        await Task.Delay(Watcher.MinInterval);
+    }
+}
+
+DateTimeOffset SampleNow()
+{
+    var set = SimpleFinClient.ParseAccounts(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "sample-history.json")));
+    return Purchase.From(set).Max(p => p.Posted).AddHours(1);
+}
+
+ISmsSender Twilio()
+{
+    string Need(string key) => Environment.GetEnvironmentVariable(key) is { Length: > 0 } v
+        ? v
+        : throw new InvalidOperationException($"No {key} in .env. Add the Twilio values, or run watch --print.");
+    return new TwilioSmsSender(http, Need("TWILIO_ACCOUNT_SID"), Need("TWILIO_AUTH_TOKEN"),
+        Need("TWILIO_FROM_NUMBER"), Need("BUDGETER_TO_NUMBER"));
 }
 
 async Task<(List<Purchase>, IReadOnlyDictionary<string, string>, DateTimeOffset)> LoadHistory(

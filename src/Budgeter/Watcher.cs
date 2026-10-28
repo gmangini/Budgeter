@@ -37,7 +37,8 @@ public sealed class Watcher(
     Categorizer categorizer,
     BudgetStore budgets,
     ISmsSender sms,
-    string statePath)
+    string statePath,
+    Roaster? roaster = null)
 {
     /// <summary>SimpleFIN Bridge allows about 24 requests a day; every 2 hours stays well inside it.</summary>
     public static readonly TimeSpan MinInterval = TimeSpan.FromHours(2);
@@ -97,7 +98,8 @@ public sealed class Watcher(
                     ? null
                     : BudgetPlanner.Status(plan, purchases.Where(x => x.Posted <= p.Posted).ToList(), categories, now)
                         .FirstOrDefault(s => s.Category == category);
-                state.Outbox.Add(Message(p, category, status));
+                var comment = roaster is null ? null : await roaster.CommentAsync(p, category, status, ct);
+                state.Outbox.Add(Message(p, category, status, comment));
                 newCount++;
             }
             foreach (var t in fresh) state.Seen[t.Id] = DateTimeOffset.FromUnixTimeSeconds(t.Posted);
@@ -129,7 +131,7 @@ public sealed class Watcher(
         return new PollResult(newCount, sent, state.Outbox.Count);
     }
 
-    public static string Message(Purchase p, string category, CategoryStatus? status)
+    public static string Message(Purchase p, string category, CategoryStatus? status, string? comment = null)
     {
         var text = $"Budgeter: {p.Amount.ToString("C", Usd)} at {p.Description.Trim()} ({category}).";
         if (status is not null)
@@ -139,6 +141,7 @@ public sealed class Watcher(
                 : $" {Math.Ceiling(-status.Left).ToString("C0", Usd)} over for {category} this month.";
         else
             text += " No budget set for this category.";
+        if (!string.IsNullOrWhiteSpace(comment)) text += " " + comment;
         return text + " Reply STOP to opt out.";
     }
 

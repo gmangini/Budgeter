@@ -43,7 +43,7 @@ try
             await Watch();
             break;
         default:
-            Console.WriteLine("Usage: budgeter [claim | balances | budget propose | budget approve | budget show | watch [--print] [--once] [--replay N]] [--sample]");
+            Console.WriteLine("Usage: budgeter [claim | balances | budget propose | budget approve | budget show | watch [--print] [--once] [--replay N] [--plain]] [--sample]");
             return 2;
     }
     return 0;
@@ -135,7 +135,8 @@ async Task Watch()
         new Categorizer(Llm(), Path.Combine(dataDir, "categories.json")),
         new BudgetStore(dataDir),
         sms,
-        Path.Combine(dataDir, "watch-state.json"));
+        Path.Combine(dataDir, "watch-state.json"),
+        args.Contains("--plain") ? null : new Roaster(Llm()));
 
     Console.WriteLine($"Watching for new purchases ({(print ? "print mode, nothing is texted" : "texting via Twilio")}).");
     while (true)

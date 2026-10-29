@@ -120,6 +120,7 @@ public class AssistantTests : IDisposable
         Assert.Contains("bars: limit $100.00, spent $65.00, left $35.00", prompt);
         Assert.DoesNotContain("PYMT", prompt); // card payments aren't spending
         Assert.Contains("Latest message: what did I spend today?", prompt);
+        Assert.Contains("Subscriptions and recurring bills, found from the saved history", prompt);
     }
 
     [Fact]

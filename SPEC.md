@@ -1,6 +1,6 @@
 # Spec: budgeter
 
-Status: approved 2026-10-27 · changed 2026-10-29 (alerts moved from SMS to Telegram: AC-4 -> AC-16; chat with the bot: AC-17 to AC-20)
+Status: approved 2026-10-27 · changed 2026-10-29 (alerts moved from SMS to Telegram: AC-4 -> AC-16; chat with the bot: AC-17 to AC-20; subscriptions: AC-21 to AC-24)
 
 ## Problem
 My credit card spending creeps up and I only notice when the statement lands. I want a budget built from what I
@@ -31,6 +31,10 @@ Just me. Runs unattended on a cloud Linux machine; I see alerts as Telegram mess
 - [x] AC-18: Given I ask to change a limit ("set bars to 200", "bars 200"), when the bot understands it, then the active budget changes and the reply confirms the new limit and what's left this month.
 - [x] AC-19: Given a message from any chat other than mine, when the bot receives it, then it sends no reply and reveals nothing about my data.
 - [x] AC-20: Given I send `budget` or `help`, when the bot answers, then it uses no Sonnet call; and no message ever makes Budgeter fetch from SimpleFIN.
+- [x] AC-21: Given at least two charges from a merchant at a steady weekly, monthly or yearly rhythm and price, when I send `subscriptions` (in chat or the CLI), then I get each subscription with its price, how often it charges and when it's next expected, plus the monthly and yearly total; recurring bills whose amount varies (like utilities) are listed separately, outside that total.
+- [x] AC-22: Given a known subscription, when a new charge for it has a different price than the last one, then that purchase's alert says the old and new price and what the change costs per year.
+- [x] AC-23: Given at least 5 weeks of history, when a purchase categorized as subscriptions comes from a merchant never charged before, then its alert flags it as a possible new subscription.
+- [x] AC-24: Given a subscription that hasn't charged within 10 days after it was expected (4 for weekly), when I ask for subscriptions, then it's marked as possibly canceled and left out of the total.
 
 ## Non-goals (not in this version)
 - Alerts from cards that don't send purchase emails (those wait for SimpleFIN's daily refresh)
@@ -39,6 +43,7 @@ Just me. Runs unattended on a cloud Linux machine; I see alerts as Telegram mess
 - Investment or financial advice
 
 ## Constraints
+- History: SimpleFIN returns about 90 days, so Budgeter keeps its own growing history; yearly subscriptions only show up once it has seen two charges a year apart.
 - Data: transactions and the budget stay on the cloud machine (local files or SQLite); SimpleFIN access URL, Anthropic key and Telegram bot token in `.env` only, never committed or printed.
 - Cost: SimpleFIN ~$15/yr; Telegram is free; Sonnet calls are pennies a month (one categorize-and-comment call per purchase, one per budget proposal).
 - Platform: headless .NET 8 console app on a Linux cloud VM; alerts only go to my own Telegram chat.

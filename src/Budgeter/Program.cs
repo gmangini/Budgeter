@@ -51,11 +51,14 @@ try
             await (TelegramBotOrNull() ?? throw new InvalidOperationException("Set up Telegram first: telegram link"))
                 .RunAsync(CancellationToken.None);
             break;
+        case ("subscriptions", _):
+            Console.WriteLine(await NewAssistant().HandleAsync("subscriptions"));
+            break;
         case ("ask", _):
             Console.WriteLine(await NewAssistant().HandleAsync(string.Join(" ", positional.Skip(1))));
             break;
         default:
-            Console.WriteLine("Usage: budgeter [claim | balances | budget propose | budget approve | budget show | watch [--print] [--once] [--replay N] [--plain] | telegram link | telegram listen | ask \"<question>\"] [--sample]");
+            Console.WriteLine("Usage: budgeter [claim | balances | budget propose | budget approve | budget show | watch [--print] [--once] [--replay N] [--plain] | subscriptions | telegram link | telegram listen | ask \"<question>\"] [--sample]");
             return 2;
     }
     return 0;
@@ -149,7 +152,8 @@ async Task Watch()
         alerts,
         Path.Combine(dataDir, "watch-state.json"),
         args.Contains("--plain") ? null : new Roaster(Llm()),
-        new SnapshotStore(Path.Combine(dataDir, "snapshot.json")));
+        new SnapshotStore(Path.Combine(dataDir, "snapshot.json")),
+        new HistoryStore(Path.Combine(dataDir, "history.json")));
 
     // With Telegram, answer chat messages the whole time watch runs (not for a one-off --once check).
     if (!once && alerts is TelegramAlertSender && TelegramBotOrNull() is { } bot)
@@ -202,7 +206,8 @@ Assistant NewAssistant() => new(
     new Categorizer(Llm(), Path.Combine(dataDir, "categories.json")),
     new BudgetStore(dataDir),
     Llm(),
-    () => sample ? SampleNow() : DateTimeOffset.Now);
+    () => sample ? SampleNow() : DateTimeOffset.Now,
+    new HistoryStore(Path.Combine(dataDir, "history.json")));
 
 TelegramBot? TelegramBotOrNull()
 {

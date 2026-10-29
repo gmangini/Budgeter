@@ -35,6 +35,13 @@
      "pending": false
     },
     {
+     "id": "s53",
+     "posted": 1783080060,
+     "amount": "-11.99",
+     "description": "SPOTIFY USA",
+     "pending": false
+    },
+    {
      "id": "s50",
      "posted": 1783081680,
      "amount": "-24.66",
@@ -210,13 +217,6 @@
      "pending": false
     },
     {
-     "id": "s53",
-     "posted": 1783879260,
-     "amount": "-11.99",
-     "description": "SPOTIFY USA",
-     "pending": false
-    },
-    {
      "id": "s48",
      "posted": 1783956300,
      "amount": "-42.74",
@@ -228,6 +228,13 @@
      "posted": 1784022120,
      "amount": "-36.94",
      "description": "SHELL OIL 5521",
+     "pending": false
+    },
+    {
+     "id": "s52",
+     "posted": 1784118840,
+     "amount": "-15.49",
+     "description": "NETFLIX.COM",
      "pending": false
     },
     {
@@ -322,13 +329,6 @@
      "pending": false
     },
     {
-     "id": "s52",
-     "posted": 1784460840,
-     "amount": "-15.49",
-     "description": "NETFLIX.COM",
-     "pending": false
-    },
-    {
      "id": "s11",
      "posted": 1784468100,
      "amount": "-60.44",
@@ -357,17 +357,17 @@
      "pending": false
     },
     {
+     "id": "s63",
+     "posted": 1784549100,
+     "amount": "-126.33",
+     "description": "DUKE ENERGY",
+     "pending": false
+    },
+    {
      "id": "s7",
      "posted": 1784662620,
      "amount": "-91.34",
      "description": "O'MALLEY'S PUB",
-     "pending": false
-    },
-    {
-     "id": "s63",
-     "posted": 1784671500,
-     "amount": "-126.33",
-     "description": "DUKE ENERGY",
      "pending": false
     },
     {
@@ -497,10 +497,10 @@
      "pending": false
     },
     {
-     "id": "s116",
-     "posted": 1785760920,
-     "amount": "-15.49",
-     "description": "NETFLIX.COM",
+     "id": "s117",
+     "posted": 1785761340,
+     "amount": "-11.99",
+     "description": "SPOTIFY USA",
      "pending": false
     },
     {
@@ -515,13 +515,6 @@
      "posted": 1785885840,
      "amount": "-133.88",
      "description": "KROGER #412",
-     "pending": false
-    },
-    {
-     "id": "s117",
-     "posted": 1785887340,
-     "amount": "-11.99",
-     "description": "SPOTIFY USA",
      "pending": false
     },
     {
@@ -599,13 +592,6 @@
      "posted": 1786316880,
      "amount": "-27.38",
      "description": "UBER *TRIP",
-     "pending": false
-    },
-    {
-     "id": "s127",
-     "posted": 1786381440,
-     "amount": "-100.08",
-     "description": "DUKE ENERGY",
      "pending": false
     },
     {
@@ -690,6 +676,13 @@
      "posted": 1786743600,
      "amount": "-79.90",
      "description": "KROGER #412",
+     "pending": false
+    },
+    {
+     "id": "s116",
+     "posted": 1786797720,
+     "amount": "-15.49",
+     "description": "NETFLIX.COM",
      "pending": false
     },
     {
@@ -781,6 +774,13 @@
      "posted": 1787227200,
      "amount": "850.00",
      "description": "CAPITAL ONE MOBILE PYMT",
+     "pending": false
+    },
+    {
+     "id": "s127",
+     "posted": 1787227440,
+     "amount": "-100.08",
+     "description": "DUKE ENERGY",
      "pending": false
     },
     {
@@ -910,13 +910,6 @@
      "pending": false
     },
     {
-     "id": "s181",
-     "posted": 1788253680,
-     "amount": "-11.99",
-     "description": "SPOTIFY USA",
-     "pending": false
-    },
-    {
      "id": "s156",
      "posted": 1788259200,
      "amount": "-14.45",
@@ -949,6 +942,13 @@
      "posted": 1788375660,
      "amount": "-20.90",
      "description": "UBER *TRIP",
+     "pending": false
+    },
+    {
+     "id": "s181",
+     "posted": 1788437280,
+     "amount": "-11.99",
+     "description": "SPOTIFY USA",
      "pending": false
     },
     {
@@ -1071,13 +1071,6 @@
      "pending": false
     },
     {
-     "id": "s191",
-     "posted": 1789295400,
-     "amount": "-135.97",
-     "description": "DUKE ENERGY",
-     "pending": false
-    },
-    {
      "id": "s155",
      "posted": 1789308180,
      "amount": "-15.02",
@@ -1117,6 +1110,13 @@
      "posted": 1789468920,
      "amount": "-55.47",
      "description": "SHELL OIL 5521",
+     "pending": false
+    },
+    {
+     "id": "s180",
+     "posted": 1789476060,
+     "amount": "-15.49",
+     "description": "NETFLIX.COM",
      "pending": false
     },
     {
@@ -1190,6 +1190,13 @@
      "pending": false
     },
     {
+     "id": "s191",
+     "posted": 1789907400,
+     "amount": "-135.97",
+     "description": "DUKE ENERGY",
+     "pending": false
+    },
+    {
      "id": "s174",
      "posted": 1789988520,
      "amount": "-76.34",
@@ -1222,13 +1229,6 @@
      "posted": 1790103060,
      "amount": "-81.64",
      "description": "AMAZON.COM*2K4",
-     "pending": false
-    },
-    {
-     "id": "s180",
-     "posted": 1790109660,
-     "amount": "-15.49",
-     "description": "NETFLIX.COM",
      "pending": false
     },
     {
@@ -1379,6 +1379,13 @@
      "pending": false
     },
     {
+     "id": "s235",
+     "posted": 1791030480,
+     "amount": "-11.99",
+     "description": "SPOTIFY USA",
+     "pending": false
+    },
+    {
      "id": "s233",
      "posted": 1791030720,
      "amount": "-82.66",
@@ -1439,13 +1446,6 @@
      "posted": 1791557280,
      "amount": "-40.92",
      "description": "OLIVE GARDEN 1187",
-     "pending": false
-    },
-    {
-     "id": "s242",
-     "posted": 1791570180,
-     "amount": "-100.66",
-     "description": "DUKE ENERGY",
      "pending": false
     },
     {
@@ -1512,13 +1512,6 @@
      "pending": false
     },
     {
-     "id": "s235",
-     "posted": 1791754080,
-     "amount": "-11.99",
-     "description": "SPOTIFY USA",
-     "pending": false
-    },
-    {
      "id": "s238",
      "posted": 1791813060,
      "amount": "-19.82",
@@ -1568,6 +1561,13 @@
      "pending": false
     },
     {
+     "id": "s234",
+     "posted": 1792066440,
+     "amount": "-17.99",
+     "description": "NETFLIX.COM",
+     "pending": false
+    },
+    {
      "id": "s200",
      "posted": 1792081740,
      "amount": "-57.89",
@@ -1593,13 +1593,6 @@
      "posted": 1792158300,
      "amount": "-61.16",
      "description": "O'MALLEY'S PUB",
-     "pending": false
-    },
-    {
-     "id": "s234",
-     "posted": 1792170840,
-     "amount": "-15.49",
-     "description": "NETFLIX.COM",
      "pending": false
     },
     {
@@ -1649,6 +1642,13 @@
      "posted": 1792497600,
      "amount": "850.00",
      "description": "CAPITAL ONE MOBILE PYMT",
+     "pending": false
+    },
+    {
+     "id": "s242",
+     "posted": 1792498980,
+     "amount": "-100.66",
+     "description": "DUKE ENERGY",
      "pending": false
     },
     {

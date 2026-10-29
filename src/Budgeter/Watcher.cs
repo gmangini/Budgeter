@@ -39,7 +39,8 @@ public sealed class Watcher(
     IAlertSender alerts,
     string statePath,
     Roaster? roaster = null,
-    SnapshotStore? snapshots = null)
+    SnapshotStore? snapshots = null,
+    HistoryStore? historyStore = null)
 {
     /// <summary>SimpleFIN Bridge allows about 24 requests a day; every 2 hours stays well inside it.</summary>
     public static readonly TimeSpan MinInterval = TimeSpan.FromHours(2);
@@ -53,9 +54,12 @@ public sealed class Watcher(
         var monthStart = MonthStart(now);
         // Look back past the 1st, so a charge that posts late isn't missed at the start of a month.
         var fetchStart = monthStart.AddDays(-10);
-        // The same single request also covers all of last month, saved for the bot to answer questions from.
-        var set = await fetch(monthStart.AddMonths(-1).AddDays(-7));
+        // The same single request covers ~90 days (about what SimpleFIN keeps): saved for the bot to answer from
+        // and merged into the long-term history that subscriptions are found in.
+        var set = await fetch(now.AddDays(-90));
         snapshots?.Save(new TransactionSnapshot(now, set));
+        var allPurchases = HistoryStore.Purchases(
+            historyStore?.Merge(set, now) ?? set.Accounts.SelectMany(a => a.Transactions ?? []).Where(t => t.Pending != true));
         var purchases = Purchase.From(set).Where(p => p.Posted >= fetchStart).ToList();
         // Only transactions inside the fetch window can be news. Older ones may have been forgotten (pruned
         // below), so without this cut they'd look new again whenever a fetch returns more history than asked for.
@@ -97,8 +101,10 @@ public sealed class Watcher(
                     ? null
                     : BudgetPlanner.Status(plan, purchases.Where(x => x.Posted <= p.Posted).ToList(), categories, now)
                         .FirstOrDefault(s => s.Category == category);
+                var note = Subscriptions.AlertNote(p, category, allPurchases.Where(x => x.Posted < p.Posted).ToList(),
+                    categories, now);
                 var comment = roaster is null ? null : await roaster.CommentAsync(p, category, status, ct);
-                state.Outbox.Add(Message(p, category, status, comment) + alerts.Footer);
+                state.Outbox.Add(Message(p, category, status, comment, note) + alerts.Footer);
                 newCount++;
             }
             foreach (var t in fresh) state.Seen[t.Id] = DateTimeOffset.FromUnixTimeSeconds(t.Posted);
@@ -130,7 +136,8 @@ public sealed class Watcher(
         return new PollResult(newCount, sent, state.Outbox.Count);
     }
 
-    public static string Message(Purchase p, string category, CategoryStatus? status, string? comment = null)
+    public static string Message(Purchase p, string category, CategoryStatus? status, string? comment = null,
+        string? note = null)
     {
         var text = $"Budgeter: {p.Amount.ToString("C", Usd)} at {p.Description.Trim()} ({category}).";
         if (status is not null)
@@ -140,6 +147,7 @@ public sealed class Watcher(
                 : $" {Math.Ceiling(-status.Left).ToString("C0", Usd)} over for {category} this month.";
         else
             text += " No budget set for this category.";
+        if (!string.IsNullOrWhiteSpace(note)) text += " " + note;
         if (!string.IsNullOrWhiteSpace(comment)) text += " " + comment;
         return text;
     }

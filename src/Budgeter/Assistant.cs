@@ -14,13 +14,15 @@ public sealed partial class Assistant(
     Categorizer categorizer,
     BudgetStore budgets,
     ILlm llm,
-    Func<DateTimeOffset> clock)
+    Func<DateTimeOffset> clock,
+    HistoryStore? history = null)
 {
     public const string HelpText =
         "Ask me anything about your spending, like \"what did I spend today?\", \"how much on bars this week?\" " +
         "or \"am I on track this month?\".\n\n" +
         "Change a limit: \"bars 200\" or \"set coffee to 40\".\n" +
         "budget: this month's limits, spent and left.\n" +
+        "subscriptions: everything that charges you on repeat, with monthly and yearly totals.\n" +
         "help: this message.\n\n" +
         "I answer from the last sync (every 2 hours), and charges usually post a day or two after you buy.";
 
@@ -73,6 +75,11 @@ public sealed partial class Assistant(
 
         var snapshot = snapshots.Load();
         if (command is "budget" or "status") return await BudgetReplyAsync(snapshot, ct);
+        if (command is "subscriptions" or "subs" or "subscription")
+        {
+            var (purchases, categories) = await HistoryAsync(snapshot, ct);
+            return Subscriptions.Summary(purchases, categories, clock());
+        }
 
         if (SetPattern().Match(command) is { Success: true } m && Categorizer.Categories.Contains(m.Groups["cat"].Value))
             return await ApplyLimitsAsync([(m.Groups["cat"].Value, decimal.Parse(m.Groups["amt"].Value, CultureInfo.InvariantCulture))], snapshot, ct);
@@ -197,10 +204,24 @@ public sealed partial class Assistant(
         sb.AppendLine($"This month so far: {ByCategory(purchases.Where(p => Day(p) >= monthStart))}");
         sb.AppendLine($"Last month ({lastMonthStart:MMMM}): {ByCategory(purchases.Where(p => Day(p) >= lastMonthStart && Day(p) < monthStart))}");
 
+        var (history, historyCategories) = await HistoryAsync(snapshot, ct);
+        sb.AppendLine("\nSubscriptions and recurring bills, found from the saved history (exact):");
+        sb.AppendLine(Subscriptions.Summary(history, historyCategories, clock()));
+
         sb.AppendLine($"\nEvery transaction since {lastMonthStart:MMM d} (posted date, merchant, category, amount):");
         foreach (var p in purchases.Where(p => Day(p) >= lastMonthStart).OrderByDescending(p => p.Posted))
             sb.AppendLine($"- {Day(p):MMM d} | {p.Description.Trim()} | {Cat(p)} | {Money(p.Amount)}");
         return sb.ToString();
+    }
+
+    /// <summary>The long-term history when there is one, else just the last sync.</summary>
+    private async Task<(List<Purchase>, IReadOnlyDictionary<string, string>)> HistoryAsync(
+        TransactionSnapshot? snapshot, CancellationToken ct)
+    {
+        var saved = history?.Load() ?? [];
+        var purchases = saved.Count > 0 ? HistoryStore.Purchases(saved)
+            : snapshot is null ? [] : Purchase.From(snapshot.Accounts);
+        return (purchases, await categorizer.CategorizeAsync(purchases.Select(p => p.Description), ct));
     }
 
     public static string Freshness(TransactionSnapshot? snapshot)

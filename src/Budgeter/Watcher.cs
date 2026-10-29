@@ -101,8 +101,11 @@ public sealed class Watcher(
                     ? null
                     : BudgetPlanner.Status(plan, purchases.Where(x => x.Posted <= p.Posted).ToList(), categories, now)
                         .FirstOrDefault(s => s.Category == category);
-                var note = Subscriptions.AlertNote(p, category, allPurchases.Where(x => x.Posted < p.Posted).ToList(),
-                    categories, now);
+                // Posted times are often just the day, so twins can share one: order those by id, flagging only the second.
+                var earlier = allPurchases.Where(x => x.Posted < p.Posted ||
+                                                      (x.Posted == p.Posted && string.CompareOrdinal(x.Id, p.Id) < 0)).ToList();
+                var notes = new[] { OddCharges.Note(p, category, earlier, now), Subscriptions.AlertNote(p, category, earlier, categories, now) };
+                var note = string.Join(" ", notes.Where(n => n is not null));
                 var comment = roaster is null ? null : await roaster.CommentAsync(p, category, status, ct);
                 state.Outbox.Add(Message(p, category, status, comment, note) + alerts.Footer);
                 newCount++;

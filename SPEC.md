@@ -1,6 +1,6 @@
 # Spec: budgeter
 
-Status: approved 2026-10-27 · changed 2026-10-29 (alerts moved from SMS to Telegram: AC-4 -> AC-16; chat with the bot: AC-17 to AC-20; subscriptions: AC-21 to AC-24)
+Status: approved 2026-10-27 · changed 2026-10-29 (alerts moved from SMS to Telegram: AC-4 -> AC-16; chat with the bot: AC-17 to AC-20; subscriptions: AC-21 to AC-24; odd charges, buttons, wrap-ups, streaks, charts: AC-25 to AC-32)
 
 ## Problem
 My credit card spending creeps up and I only notice when the statement lands. I want a budget built from what I
@@ -35,6 +35,14 @@ Just me. Runs unattended on a cloud Linux machine; I see alerts as Telegram mess
 - [x] AC-22: Given a known subscription, when a new charge for it has a different price than the last one, then that purchase's alert says the old and new price and what the change costs per year.
 - [x] AC-23: Given at least 5 weeks of history, when a purchase categorized as subscriptions comes from a merchant never charged before, then its alert flags it as a possible new subscription.
 - [x] AC-24: Given a subscription that hasn't charged within 10 days after it was expected (4 for weekly), when I ask for subscriptions, then it's marked as possibly canceled and left out of the total.
+- [x] AC-25: Given a charge with the same amount at the same merchant as one posted within the previous 24 hours, when it's alerted, then the alert asks whether it's a double charge (only the second one is flagged).
+- [x] AC-26: Given at least 3 earlier charges at a merchant, when a new one is at least 3 times the usual (median) and at least $25 more, then its alert says it's way more than usual and what usual is.
+- [x] AC-27: Given at least 5 weeks of history, when a purchase comes from a merchant never charged before (and it isn't a subscription), then its alert says it's the first time there.
+- [ ] AC-28: Given my linked chat, when I send `propose`, then the bot replies with a proposed budget (limit and average per category) and Approve / Discard buttons; tapping Approve makes it the active budget and confirms it, Discard throws it away.
+- [ ] AC-29: Given an active budget and last month in the history, when the first sync of a new month runs, then I get last month's wrap-up (spent vs limit, where I went over) and up to 3 suggested limit changes, each with an Apply button that changes that limit when tapped; it comes once per month, and `tune up` asks for one any time.
+- [ ] AC-30: Given no bar charge has posted for 3, 7, 14, 30, 60 or 90 days, when a sync passes that mark, then I get one short message of praise for it; a new bar charge restarts the count, and `streak` shows the current one.
+- [ ] AC-31: Given synced data, when I send `chart` or ask to see this month, then the bot sends an image of this month's spending against each limit; `daily chart` sends spending per day. Charts are drawn on the machine; the data isn't sent to any chart service.
+- [ ] AC-32: Given a button tap from any chat other than mine, when the bot receives it, then nothing changes and nothing is revealed.
 
 ## Non-goals (not in this version)
 - Alerts from cards that don't send purchase emails (those wait for SimpleFIN's daily refresh)

@@ -123,6 +123,21 @@ public class WatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task Twin_charges_posted_at_the_same_time_flag_only_the_second()
+    {
+        var sms = new RecordingSms();
+        var watcher = NewWatcher(sms);
+        await watcher.PollOnceAsync(Now);
+
+        Add("1", "PUB", "-20.00", 25);
+        Add("2", "PUB", "-20.00", 25);
+        await watcher.PollOnceAsync(Now);
+
+        Assert.DoesNotContain("Double charge?", sms.Sent[0]);
+        Assert.Contains("Double charge? The same $20.00 at PUB posted earlier the same day too.", sms.Sent[1]);
+    }
+
+    [Fact]
     public async Task Over_budget_says_how_much_over()
     {
         var sms = new RecordingSms();

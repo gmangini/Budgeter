@@ -18,6 +18,8 @@ foreach (var (key, value) in env)
     if (Environment.GetEnvironmentVariable(key) is null) Environment.SetEnvironmentVariable(key, value);
 
 using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+// Telegram holds each listen request open for up to 50 seconds, so the bot needs a longer timeout.
+using var botHttp = new HttpClient { Timeout = TimeSpan.FromSeconds(TelegramBot.LongPollSeconds + 30) };
 var client = new SimpleFinClient(http);
 
 try
@@ -45,8 +47,15 @@ try
         case ("telegram", "link"):
             await TelegramLink();
             break;
+        case ("telegram", "listen"):
+            await (TelegramBotOrNull() ?? throw new InvalidOperationException("Set up Telegram first: telegram link"))
+                .RunAsync(CancellationToken.None);
+            break;
+        case ("ask", _):
+            Console.WriteLine(await NewAssistant().HandleAsync(string.Join(" ", positional.Skip(1))));
+            break;
         default:
-            Console.WriteLine("Usage: budgeter [claim | balances | budget propose | budget approve | budget show | watch [--print] [--once] [--replay N] [--plain] | telegram link] [--sample]");
+            Console.WriteLine("Usage: budgeter [claim | balances | budget propose | budget approve | budget show | watch [--print] [--once] [--replay N] [--plain] | telegram link | telegram listen | ask \"<question>\"] [--sample]");
             return 2;
     }
     return 0;
@@ -139,7 +148,15 @@ async Task Watch()
         new BudgetStore(dataDir),
         alerts,
         Path.Combine(dataDir, "watch-state.json"),
-        args.Contains("--plain") ? null : new Roaster(Llm()));
+        args.Contains("--plain") ? null : new Roaster(Llm()),
+        new SnapshotStore(Path.Combine(dataDir, "snapshot.json")));
+
+    // With Telegram, answer chat messages the whole time watch runs (not for a one-off --once check).
+    if (!once && alerts is TelegramAlertSender && TelegramBotOrNull() is { } bot)
+    {
+        _ = bot.RunAsync(CancellationToken.None);
+        channel += ", answering chat messages";
+    }
 
     Console.WriteLine($"Watching for new purchases ({channel}).");
     while (true)
@@ -178,6 +195,21 @@ DateTimeOffset SampleNow()
 {
     var set = SimpleFinClient.ParseAccounts(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "sample-history.json")));
     return Purchase.From(set).Max(p => p.Posted).AddHours(1);
+}
+
+Assistant NewAssistant() => new(
+    new SnapshotStore(Path.Combine(dataDir, "snapshot.json")),
+    new Categorizer(Llm(), Path.Combine(dataDir, "categories.json")),
+    new BudgetStore(dataDir),
+    Llm(),
+    () => sample ? SampleNow() : DateTimeOffset.Now);
+
+TelegramBot? TelegramBotOrNull()
+{
+    var token = Environment.GetEnvironmentVariable("TELEGRAM_BOT_TOKEN");
+    var chatId = Environment.GetEnvironmentVariable("TELEGRAM_CHAT_ID");
+    if (string.IsNullOrEmpty(token) || string.IsNullOrEmpty(chatId)) return null;
+    return new TelegramBot(botHttp, token, chatId, NewAssistant(), Path.Combine(dataDir, "telegram-offset.txt"));
 }
 
 /// <summary>Telegram when a bot token is set, otherwise Twilio SMS.</summary>

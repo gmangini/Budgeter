@@ -38,7 +38,8 @@ public sealed class Watcher(
     BudgetStore budgets,
     IAlertSender alerts,
     string statePath,
-    Roaster? roaster = null)
+    Roaster? roaster = null,
+    SnapshotStore? snapshots = null)
 {
     /// <summary>SimpleFIN Bridge allows about 24 requests a day; every 2 hours stays well inside it.</summary>
     public static readonly TimeSpan MinInterval = TimeSpan.FromHours(2);
@@ -52,8 +53,10 @@ public sealed class Watcher(
         var monthStart = MonthStart(now);
         // Look back past the 1st, so a charge that posts late isn't missed at the start of a month.
         var fetchStart = monthStart.AddDays(-10);
-        var set = await fetch(fetchStart);
-        var purchases = Purchase.From(set);
+        // The same single request also covers all of last month, saved for the bot to answer questions from.
+        var set = await fetch(monthStart.AddMonths(-1).AddDays(-7));
+        snapshots?.Save(new TransactionSnapshot(now, set));
+        var purchases = Purchase.From(set).Where(p => p.Posted >= fetchStart).ToList();
         // Only transactions inside the fetch window can be news. Older ones may have been forgotten (pruned
         // below), so without this cut they'd look new again whenever a fetch returns more history than asked for.
         var posted = set.Accounts.SelectMany(a => a.Transactions ?? [])

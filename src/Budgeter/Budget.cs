@@ -166,12 +166,28 @@ public sealed class BudgetStore(string dataDir)
 
     public BudgetPlan? Active => Read(ActivePath);
 
+    /// <summary>Changes (or adds) one category's monthly limit in the active budget.</summary>
+    public BudgetPlan SetLimit(string category, decimal limit)
+    {
+        if (!Categorizer.Categories.Contains(category))
+            throw new InvalidOperationException(
+                $"Unknown category '{category}'. Use one of: {string.Join(", ", Categorizer.Categories)}.");
+        if (limit < 0) throw new InvalidOperationException("A limit can't be negative.");
+        var plan = Active ?? throw new InvalidOperationException("No active budget yet. Run: budget propose, then budget approve");
+
+        var limit0 = Math.Round(limit);
+        var categories = plan.Categories.Any(c => c.Category == category)
+            ? plan.Categories.Select(c => c.Category == category ? c with { Limit = limit0 } : c).ToList()
+            : [.. plan.Categories, new CategoryLimit(category, limit0, 0, "Added from chat.")];
+        var updated = plan with { Categories = categories };
+        Write(ActivePath, updated);
+        return updated;
+    }
+
     private static BudgetPlan? Read(string path) =>
         File.Exists(path) ? JsonSerializer.Deserialize<BudgetPlan>(File.ReadAllText(path), JsonOptions.Web) : null;
 
-    private static void Write(string path, BudgetPlan plan)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
-        File.WriteAllText(path, JsonSerializer.Serialize(plan, JsonOptions.Indented));
-    }
+    // Atomic: watch reads the budget while the bot may be changing it.
+    private static void Write(string path, BudgetPlan plan) =>
+        AtomicFile.Write(path, JsonSerializer.Serialize(plan, JsonOptions.Indented));
 }

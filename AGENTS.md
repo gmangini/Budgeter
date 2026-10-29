@@ -7,6 +7,7 @@ Personal app built with the agenticSkills system. Every assistant follows these 
 - Core rules: `as-app-core`
 - Run it: `dotnet run --project src/Budgeter -- balances --sample` (drop `--sample` for real data; `claim` first)
 - Watch: `dotnet run --project src/Budgeter -- watch --print --once` (print mode; drop `--print` to send to Telegram after `telegram link`, drop `--once` to keep polling)
+- Chat: while `watch` runs with Telegram it also answers the linked chat; `ask "<question>"` answers in the terminal
 - Test it: `dotnet test`
 
 ## Where state lives

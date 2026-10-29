@@ -68,11 +68,9 @@ public sealed class Categorizer(ILlm llm, string cachePath)
             ? JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(cachePath)) ?? []
             : [];
 
-    private void Save(Dictionary<string, string> cache)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(cachePath))!);
-        File.WriteAllText(cachePath, JsonSerializer.Serialize(cache, JsonOptions.Indented));
-    }
+    // Atomic: watch and the chat bot share this cache.
+    private void Save(Dictionary<string, string> cache) =>
+        AtomicFile.Write(cachePath, JsonSerializer.Serialize(cache, JsonOptions.Indented));
 
     private sealed record Reply(List<Item> Items);
 

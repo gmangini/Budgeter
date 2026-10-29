@@ -1,6 +1,6 @@
 # Spec: budgeter
 
-Status: approved 2026-10-27 · changed 2026-10-29 (alerts moved from SMS to Telegram: AC-4 -> AC-16)
+Status: approved 2026-10-27 · changed 2026-10-29 (alerts moved from SMS to Telegram: AC-4 -> AC-16; chat with the bot: AC-17 to AC-20)
 
 ## Problem
 My credit card spending creeps up and I only notice when the statement lands. I want a budget built from what I
@@ -27,11 +27,14 @@ Just me. Runs unattended on a cloud Linux machine; I see alerts as Telegram mess
 - [ ] AC-14: Given a purchase was already texted from an alert email, when SimpleFIN later returns the same purchase (same card, amount, merchant and date), then no second alert is sent.
 - [ ] AC-15: Given it's my second or later bar purchase of the night, or any bar purchase after 10 PM, when its SMS is written, then it also tells me to stop and get a ride home, not drive.
 - [ ] AC-16: Given a Telegram bot linked to my chat with `telegram link`, when `watch` finds a posted purchase it hasn't seen before, then I get one Telegram message with the amount, merchant, its category, what's left in that category this month, and a one-line comment; messages go only to the linked chat.
+- [x] AC-17: Given my linked Telegram chat, when I send a question such as "what did I spend today?" or "how much on bars this week?", then the bot replies within a minute with an answer computed from my saved transactions and budget, and says how fresh that data is.
+- [x] AC-18: Given I ask to change a limit ("set bars to 200", "bars 200"), when the bot understands it, then the active budget changes and the reply confirms the new limit and what's left this month.
+- [x] AC-19: Given a message from any chat other than mine, when the bot receives it, then it sends no reply and reveals nothing about my data.
+- [x] AC-20: Given I send `budget` or `help`, when the bot answers, then it uses no Sonnet call; and no message ever makes Budgeter fetch from SimpleFIN.
 
 ## Non-goals (not in this version)
 - Alerts from cards that don't send purchase emails (those wait for SimpleFIN's daily refresh)
 - Bank/checking accounts, income, net worth, or anything that moves money
-- Replying to an alert to change the budget (next candidate: Telegram replies need no public web address)
 - A web or phone UI; multiple users
 - Investment or financial advice
 

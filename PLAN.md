@@ -13,6 +13,7 @@ Spec: [SPEC.md](SPEC.md) · Stack skill: `as-app-core`
 | S5 | Run it on the cloud machine as a service that survives restarts | AC-12 | building (deploy kit ready; needs a server) | e4f2f88 |
 | S6 | Final: Capital One alert emails for near-real-time texts, no duplicates, get-home nudge | AC-13, AC-14, AC-15 | todo | |
 | S7 | Alerts go to Telegram instead of SMS (`telegram link`); Twilio kept as an option | AC-16 | done (linked + test message; first real alert pending) | 86e15a9 |
+| S8 | Chat with the bot: ask questions, change limits, `budget` and `help` | AC-17, AC-18, AC-19, AC-20 | done | f5393e4 |
 
 Status is one of `todo`, `building`, `review`, `done`.
 

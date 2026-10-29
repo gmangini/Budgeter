@@ -9,6 +9,11 @@ if ! ldconfig -p | grep -q libicuuc; then
   echo "Installing ICU..."
   apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libicu-dev >/dev/null
 fi
+# Charts need a font file to draw text with; the app looks for DejaVu Sans.
+if [ ! -f /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf ]; then
+  echo "Installing fonts for charts..."
+  apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq fonts-dejavu-core >/dev/null
+fi
 
 id budgeter >/dev/null 2>&1 || useradd --system --home-dir /opt/budgeter --shell /usr/sbin/nologin budgeter
 mkdir -p /opt/budgeter/app /opt/budgeter/data

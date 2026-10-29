@@ -15,11 +15,11 @@ Spec: [SPEC.md](SPEC.md) · Stack skill: `as-app-core`
 | S7 | Alerts go to Telegram instead of SMS (`telegram link`); Twilio kept as an option | AC-16 | done (linked + test message; first real alert pending) | 86e15a9 |
 | S8 | Chat with the bot: ask questions, change limits, `budget` and `help` | AC-17, AC-18, AC-19, AC-20 | done | f5393e4 |
 | S9 | Find subscriptions, total them, flag price changes and new ones | AC-21, AC-22, AC-23, AC-24 | done | 6230cae |
-| S10 | Odd-charge notes: double charges, way more than usual, first time at a merchant | AC-25, AC-26, AC-27 | done (tests; try on real data pending) | b4ed61e |
-| S11 | Telegram buttons; propose and approve a budget from chat | AC-28, AC-32 | todo | |
-| S12 | Monthly wrap-up with tap-to-apply limit suggestions; `tune up` | AC-29 | todo | |
-| S13 | No-bar-tab streaks with praise at milestones; `streak` | AC-30 | todo | |
-| S14 | Charts: this month by category vs limit, and per day | AC-31 | todo | |
+| S10 | Odd-charge notes: double charges, way more than usual, first time at a merchant | AC-25, AC-26, AC-27 | review (tests pass; not tried on real data) | b4ed61e |
+| S11 | Telegram buttons; propose and approve a budget from chat | AC-28, AC-32 | review (tests + sample data; not tried in Telegram) | 5fdda9b |
+| S12 | Monthly wrap-up with tap-to-apply limit suggestions; `tune up` | AC-29 | review (tests + sample data; not tried in Telegram) | 5fdda9b |
+| S13 | No-bar-tab streaks with praise at milestones; `streak` | AC-30 | review (tests + sample data; not tried in Telegram) | 5fdda9b |
+| S14 | Charts: this month by category vs limit, and per day | AC-31 | review (tests + sample data; not tried in Telegram) | 5fdda9b |
 
 Status is one of `todo`, `building`, `review`, `done`.
 

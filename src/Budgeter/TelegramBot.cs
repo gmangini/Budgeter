@@ -4,8 +4,8 @@ using System.Text.Json;
 namespace Budgeter;
 
 /// <summary>
-/// Reads messages sent to the bot (Telegram long polling, so no public web address is needed) and answers the
-/// linked chat only. Everyone else is ignored without a reply.
+/// Reads messages and button taps sent to the bot (Telegram long polling, so no public web address is needed)
+/// and answers the linked chat only. Everyone else is ignored without a reply.
 /// </summary>
 public sealed class TelegramBot(HttpClient http, string botToken, string chatId, Assistant assistant, string offsetPath)
 {
@@ -29,13 +29,13 @@ public sealed class TelegramBot(HttpClient http, string botToken, string chatId,
         }
     }
 
-    /// <summary>Fetches pending messages once and answers each one from the linked chat. Returns how many were answered.</summary>
+    /// <summary>Fetches pending updates once and answers each one from the linked chat. Returns how many were answered.</summary>
     public async Task<int> PollOnceAsync(int timeoutSeconds, CancellationToken ct = default)
     {
         var offset = File.Exists(offsetPath) ? long.Parse(File.ReadAllText(offsetPath)) : 0;
         using var response = await http.GetAsync(
             Telegram.Url(botToken, "getUpdates") +
-            $"?timeout={timeoutSeconds}&offset={offset}&allowed_updates={Uri.EscapeDataString("[\"message\"]")}", ct);
+            $"?timeout={timeoutSeconds}&offset={offset}&allowed_updates={Uri.EscapeDataString("[\"message\",\"callback_query\"]")}", ct);
         if (!response.IsSuccessStatusCode)
             throw new AlertException($"Telegram getUpdates failed ({(int)response.StatusCode}): " +
                                      await Telegram.Description(response, ct));
@@ -44,34 +44,53 @@ public sealed class TelegramBot(HttpClient http, string botToken, string chatId,
         var answered = 0;
         foreach (var update in doc.RootElement.GetProperty("result").EnumerateArray())
         {
-            // Move past this update first, so a message that makes us fail isn't retried forever.
+            // Move past this update first, so one that makes us fail isn't retried forever.
             AtomicFile.Write(offsetPath, (update.GetProperty("update_id").GetInt64() + 1).ToString());
-            if (!update.TryGetProperty("message", out var message)) continue;
-            if (message.GetProperty("chat").GetProperty("id").GetRawText() != chatId) continue;
-            if (!message.TryGetProperty("text", out var textElement) || textElement.GetString() is not { Length: > 0 } text)
-                continue;
 
-            await SendTypingAsync(ct);
-            var reply = await assistant.HandleAsync(text, ct);
-            using var sent = await http.PostAsJsonAsync(Telegram.Url(botToken, "sendMessage"),
-                new { chat_id = chatId, text = reply }, ct);
-            if (!sent.IsSuccessStatusCode)
-                throw new AlertException($"Telegram reply failed ({(int)sent.StatusCode}): " + await Telegram.Description(sent, ct));
-            answered++;
+            if (update.TryGetProperty("message", out var message))
+            {
+                if (ChatOf(message) != chatId) continue;
+                if (!message.TryGetProperty("text", out var textElement) || textElement.GetString() is not { Length: > 0 } text)
+                    continue;
+                await SendTypingAsync(ct);
+                await Telegram.SendAsync(http, botToken, chatId, await assistant.HandleReplyAsync(text, ct), ct);
+                answered++;
+            }
+            else if (update.TryGetProperty("callback_query", out var tap))
+            {
+                // A tap counts only if it's on a message in my chat and made by me (in a private chat, same id).
+                if (!tap.TryGetProperty("message", out var tapped) || ChatOf(tapped) != chatId) continue;
+                if (tap.GetProperty("from").GetProperty("id").GetRawText() != chatId) continue;
+
+                await PostAsync("answerCallbackQuery", new { callback_query_id = tap.GetProperty("id").GetString() }, ct);
+                // Take the buttons off the tapped message so the same choice can't be made twice.
+                await PostAsync("editMessageReplyMarkup", new
+                {
+                    chat_id = chatId,
+                    message_id = tapped.GetProperty("message_id").GetInt64(),
+                    reply_markup = new { inline_keyboard = Array.Empty<object>() },
+                }, ct);
+                var data = tap.TryGetProperty("data", out var d) ? d.GetString() ?? "" : "";
+                await Telegram.SendAsync(http, botToken, chatId, await assistant.HandleButtonAsync(data, ct), ct);
+                answered++;
+            }
         }
         return answered;
     }
 
-    /// <summary>Shows "typing..." while Sonnet thinks; purely cosmetic, so failures are ignored.</summary>
-    private async Task SendTypingAsync(CancellationToken ct)
+    private static string ChatOf(JsonElement message) => message.GetProperty("chat").GetProperty("id").GetRawText();
+
+    /// <summary>Cosmetic calls (typing indicator, removing buttons, stopping the tap spinner): failures are ignored.</summary>
+    private async Task PostAsync(string method, object body, CancellationToken ct)
     {
         try
         {
-            using var _ = await http.PostAsJsonAsync(Telegram.Url(botToken, "sendChatAction"),
-                new { chat_id = chatId, action = "typing" }, ct);
+            using var _ = await http.PostAsJsonAsync(Telegram.Url(botToken, method), body, ct);
         }
         catch (HttpRequestException)
         {
         }
     }
+
+    private Task SendTypingAsync(CancellationToken ct) => PostAsync("sendChatAction", new { chat_id = chatId, action = "typing" }, ct);
 }

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Budgeter;
 
@@ -13,8 +14,15 @@ public sealed class WatchState
     /// <summary>Transaction id -> posted time, for every transaction already handled.</summary>
     public Dictionary<string, DateTimeOffset> Seen { get; set; } = [];
 
-    /// <summary>Texts not yet delivered; retried on the next poll.</summary>
-    public List<string> Outbox { get; set; } = [];
+    /// <summary>Messages not yet delivered; retried on the next poll.</summary>
+    public List<OutboxMessage> Outbox { get; set; } = [];
+
+    /// <summary>The month ("2026-10") whose wrap-up has been sent.</summary>
+    public string? LastWrapUp { get; set; }
+
+    /// <summary>Start of the current no-bar-tab streak, and the biggest milestone already praised for it.</summary>
+    public DateTime? StreakSince { get; set; }
+    public int StreakPraised { get; set; }
 
     public static WatchState Load(string path) =>
         File.Exists(path) ? JsonSerializer.Deserialize<WatchState>(File.ReadAllText(path), JsonOptions.Web)! : new();
@@ -29,6 +37,28 @@ public sealed class WatchState
     }
 }
 
+/// <summary>A queued message. Older state files stored plain strings; those still load.</summary>
+[JsonConverter(typeof(OutboxMessageConverter))]
+public sealed record OutboxMessage(string Text, List<List<Button>>? Buttons = null)
+{
+    public static implicit operator OutboxMessage(string text) => new(text);
+}
+
+public sealed class OutboxMessageConverter : JsonConverter<OutboxMessage>
+{
+    private sealed record Shape(string Text, List<List<Button>>? Buttons);
+
+    public override OutboxMessage Read(ref Utf8JsonReader reader, Type type, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.String) return new(reader.GetString()!);
+        var shape = JsonSerializer.Deserialize<Shape>(ref reader, options)!;
+        return new(shape.Text, shape.Buttons);
+    }
+
+    public override void Write(Utf8JsonWriter writer, OutboxMessage value, JsonSerializerOptions options) =>
+        JsonSerializer.Serialize(writer, new Shape(value.Text, value.Buttons), options);
+}
+
 public sealed record PollResult(int NewPurchases, int Sent, int Pending);
 
 /// <summary>One poll: find new purchases, queue an alert for each, then send everything queued.</summary>
@@ -40,7 +70,8 @@ public sealed class Watcher(
     string statePath,
     Roaster? roaster = null,
     SnapshotStore? snapshots = null,
-    HistoryStore? historyStore = null)
+    HistoryStore? historyStore = null,
+    MonthlyWrapUp? wrapUps = null)
 {
     /// <summary>SimpleFIN Bridge allows about 24 requests a day; every 2 hours stays well inside it.</summary>
     public static readonly TimeSpan MinInterval = TimeSpan.FromHours(2);
@@ -68,6 +99,7 @@ public sealed class Watcher(
             .ToList();
 
         var newCount = 0;
+        var firstRun = !state.Initialized;
         if (!state.Initialized)
         {
             // First run: everything already there is history, not news.
@@ -113,6 +145,8 @@ public sealed class Watcher(
             foreach (var t in fresh) state.Seen[t.Id] = DateTimeOffset.FromUnixTimeSeconds(t.Posted);
         }
 
+        await QueueMonthlyMessagesAsync(state, allPurchases, firstRun, now, ct);
+
         // Forget ids too old to come back in a fetch, so the file doesn't grow forever.
         foreach (var old in state.Seen.Where(s => s.Value < monthStart.AddDays(-60)).Select(s => s.Key).ToList())
             state.Seen.Remove(old);
@@ -125,7 +159,7 @@ public sealed class Watcher(
         {
             try
             {
-                await alerts.SendAsync(state.Outbox[0], ct);
+                await alerts.SendAsync(new BotReply(state.Outbox[0].Text, state.Outbox[0].Buttons), ct);
             }
             catch (Exception ex) when (ex is AlertException or HttpRequestException or TaskCanceledException)
             {
@@ -137,6 +171,40 @@ public sealed class Watcher(
             state.Save(statePath);
         }
         return new PollResult(newCount, sent, state.Outbox.Count);
+    }
+
+    /// <summary>
+    /// Last month's wrap-up on the first sync of a new month, and praise when a no-bar-tab streak passes a
+    /// milestone. On the very first run both are just noted, so a new install doesn't open with old news.
+    /// </summary>
+    private async Task QueueMonthlyMessagesAsync(WatchState state, List<Purchase> allPurchases, bool firstRun,
+        DateTimeOffset now, CancellationToken ct)
+    {
+        var categories = await categorizer.CategorizeAsync(allPurchases.Select(p => p.Description), ct);
+
+        var local = now.ToLocalTime();
+        var lastMonth = MonthlyWrapUp.MonthKey(new DateTime(local.Year, local.Month, 1).AddMonths(-1));
+        if (state.LastWrapUp != lastMonth)
+        {
+            if (!firstRun && wrapUps is not null && await wrapUps.BuildAsync(allPurchases, categories, now, ct) is { } wrapUp)
+                state.Outbox.Add(new OutboxMessage(wrapUp.Text, wrapUp.Buttons));
+            state.LastWrapUp = lastMonth;
+        }
+
+        var (since, days, _) = Streaks.BarStreak(allPurchases, categories, now);
+        var milestone = Streaks.MilestoneFor(days);
+        if (state.StreakSince != since)
+        {
+            // A new streak (a bar charge posted, or the very first run): start counting from here.
+            state.StreakSince = since;
+            state.StreakPraised = firstRun ? milestone : 0;
+        }
+        if (milestone > state.StreakPraised)
+        {
+            var barAverage = budgets.Active?.Categories.FirstOrDefault(c => c.Category == "bars")?.AverageSpent;
+            state.Outbox.Add(Streaks.Praise(milestone, barAverage));
+            state.StreakPraised = milestone;
+        }
     }
 
     public static string Message(Purchase p, string category, CategoryStatus? status, string? comment = null,
@@ -158,6 +226,8 @@ public sealed class Watcher(
     public static DateTimeOffset MonthStart(DateTimeOffset now)
     {
         var local = now.ToLocalTime();
-        return new DateTimeOffset(local.Year, local.Month, 1, 0, 0, 0, local.Offset);
+        // The offset on the 1st, not today's: a daylight-saving change in between would be an hour off.
+        var first = new DateTime(local.Year, local.Month, 1);
+        return new DateTimeOffset(first, TimeZoneInfo.Local.GetUtcOffset(first));
     }
 }

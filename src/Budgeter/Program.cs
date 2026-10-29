@@ -55,8 +55,18 @@ try
             Console.WriteLine(await NewAssistant().HandleAsync("subscriptions"));
             break;
         case ("ask", _):
-            Console.WriteLine(await NewAssistant().HandleAsync(string.Join(" ", positional.Skip(1))));
+        {
+            var reply = await NewAssistant().HandleReplyAsync(string.Join(" ", positional.Skip(1)));
+            Console.WriteLine(reply.Text);
+            foreach (var row in reply.Buttons ?? []) Console.WriteLine("  " + string.Join("  ", row.Select(b => $"[{b.Text}]")));
+            if (reply.Photo is { } photo)
+            {
+                var chartPath = Path.Combine(dataDir, "chart.png");
+                File.WriteAllBytes(chartPath, photo);
+                Console.WriteLine($"Chart saved to {Path.GetRelativePath(root, chartPath)}");
+            }
             break;
+        }
         default:
             Console.WriteLine("Usage: budgeter [claim | balances | budget propose | budget approve | budget show | watch [--print] [--once] [--replay N] [--plain] | subscriptions | telegram link | telegram listen | ask \"<question>\"] [--sample]");
             return 2;
@@ -126,7 +136,7 @@ async Task Show()
 {
     var plan = new BudgetStore(dataDir).Active
                ?? throw new InvalidOperationException("No active budget. Run: budget propose, then budget approve");
-    var (purchases, categories, now) = await LoadHistory(MonthStart);
+    var (purchases, categories, now) = await LoadHistory(Watcher.MonthStart);
     var rows = BudgetPlanner.Status(plan, purchases, categories, now);
 
     Console.WriteLine($"{now.ToLocalTime():MMMM yyyy}, day {now.ToLocalTime().Day}\n");
@@ -153,7 +163,8 @@ async Task Watch()
         Path.Combine(dataDir, "watch-state.json"),
         args.Contains("--plain") ? null : new Roaster(Llm()),
         new SnapshotStore(Path.Combine(dataDir, "snapshot.json")),
-        new HistoryStore(Path.Combine(dataDir, "history.json")));
+        new HistoryStore(Path.Combine(dataDir, "history.json")),
+        WrapUps());
 
     // With Telegram, answer chat messages the whole time watch runs (not for a one-off --once check).
     if (!once && alerts is TelegramAlertSender && TelegramBotOrNull() is { } bot)
@@ -207,7 +218,10 @@ Assistant NewAssistant() => new(
     new BudgetStore(dataDir),
     Llm(),
     () => sample ? SampleNow() : DateTimeOffset.Now,
-    new HistoryStore(Path.Combine(dataDir, "history.json")));
+    new HistoryStore(Path.Combine(dataDir, "history.json")),
+    WrapUps());
+
+MonthlyWrapUp WrapUps() => new(Llm(), new BudgetStore(dataDir), Path.Combine(dataDir, "wrapups.json"));
 
 TelegramBot? TelegramBotOrNull()
 {
@@ -278,11 +292,6 @@ async Task<AccountSet> LoadAccounts(string sampleFile, DateTimeOffset? start)
     return await client.GetAccountsAsync(accessUrl, start);
 }
 
-static DateTimeOffset MonthStart(DateTimeOffset now)
-{
-    var local = now.ToLocalTime();
-    return new DateTimeOffset(local.Year, local.Month, 1, 0, 0, 0, local.Offset);
-}
 
 ILlm Llm()
 {

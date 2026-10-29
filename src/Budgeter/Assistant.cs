@@ -6,8 +6,9 @@ using System.Text.RegularExpressions;
 namespace Budgeter;
 
 /// <summary>
-/// Answers chat messages: `help` and `budget` in code, "bars 200" in code, anything else through Sonnet, which
-/// sees only the last saved sync (never a fresh SimpleFIN call) with the totals already worked out.
+/// Answers chat messages and button taps. Commands (`help`, `budget`, `chart`, "bars 200", ...) are handled in
+/// code; anything else goes through Sonnet, which sees only the last saved sync (never a fresh SimpleFIN call)
+/// with the totals already worked out.
 /// </summary>
 public sealed partial class Assistant(
     SnapshotStore snapshots,
@@ -15,14 +16,19 @@ public sealed partial class Assistant(
     BudgetStore budgets,
     ILlm llm,
     Func<DateTimeOffset> clock,
-    HistoryStore? history = null)
+    HistoryStore? history = null,
+    MonthlyWrapUp? wrapUps = null)
 {
     public const string HelpText =
         "Ask me anything about your spending, like \"what did I spend today?\", \"how much on bars this week?\" " +
         "or \"am I on track this month?\".\n\n" +
         "Change a limit: \"bars 200\" or \"set coffee to 40\".\n" +
         "budget: this month's limits, spent and left.\n" +
+        "chart: this month by category, as a picture. daily chart: spending per day.\n" +
         "subscriptions: everything that charges you on repeat, with monthly and yearly totals.\n" +
+        "streak: days since a bar tab last posted.\n" +
+        "propose: a fresh budget from your history, to approve with a tap.\n" +
+        "tune up: last month's wrap-up with suggested limit changes.\n" +
         "help: this message.\n\n" +
         "I answer from the last sync (every 2 hours), and charges usually post a day or two after you buy.";
 
@@ -38,14 +44,16 @@ public sealed partial class Assistant(
         "date), because charges post a day or two after purchases and may not be there yet. Keep replies short, " +
         "under 600 characters, plain text, no markdown or tables. A little sass is welcome; swearing is fine when " +
         "the topic is bars. If the user asks to change one or more monthly limits, put them in set_limits and " +
-        "leave the confirmation to the app (don't restate the new limits); otherwise leave set_limits empty. You " +
-        "can't move money or see any account other than these cards, and you don't give investment advice.";
+        "leave the confirmation to the app (don't restate the new limits); otherwise leave set_limits empty. If " +
+        "the user wants to see a chart or graph, set chart to month_by_category (this month against limits) or " +
+        "month_by_day (spending per day) and keep the reply to a one-line caption; otherwise set chart to none. " +
+        "You can't move money or see any account other than these cards, and you don't give investment advice.";
 
     private static readonly string Schema = JsonSerializer.Serialize(new
     {
         type = "object",
         additionalProperties = false,
-        required = new[] { "reply", "set_limits" },
+        required = new[] { "reply", "set_limits", "chart" },
         properties = new
         {
             reply = new { type = "string" },
@@ -64,39 +72,61 @@ public sealed partial class Assistant(
                     },
                 },
             },
+            chart = new { type = "string", @enum = new[] { "none", "month_by_category", "month_by_day" } },
         },
     });
 
-    public async Task<string> HandleAsync(string message, CancellationToken ct = default)
+    /// <summary>The reply's text only (for the CLI and simple callers).</summary>
+    public async Task<string> HandleAsync(string message, CancellationToken ct = default) =>
+        (await HandleReplyAsync(message, ct)).Text;
+
+    public async Task<BotReply> HandleReplyAsync(string message, CancellationToken ct = default)
     {
         var text = message.Trim();
-        var command = text.TrimStart('/').ToLowerInvariant();
-        if (command is "help" or "start") return HelpText;
+        var command = text.TrimStart('/').ToLowerInvariant().TrimEnd('.', '!', '?');
+        if (command is "help" or "start") return new(HelpText);
 
         var snapshot = snapshots.Load();
-        if (command is "budget" or "status") return await BudgetReplyAsync(snapshot, ct);
-        if (command is "subscriptions" or "subs" or "subscription")
+        switch (command)
         {
-            var (purchases, categories) = await HistoryAsync(snapshot, ct);
-            return Subscriptions.Summary(purchases, categories, clock());
+            case "budget" or "status":
+                return new(await BudgetReplyAsync(snapshot, ct));
+            case "subscriptions" or "subs" or "subscription":
+            {
+                var (purchases, categories) = await HistoryAsync(snapshot, ct);
+                return new(Subscriptions.Summary(purchases, categories, clock()));
+            }
+            case "streak" or "streaks":
+            {
+                var (purchases, categories) = await HistoryAsync(snapshot, ct);
+                return new(Streaks.Status(purchases, categories, clock()));
+            }
+            case "chart" or "charts" or "graph" or "show me this month" or "show this month":
+                return await ChartAsync("month_by_category", "", snapshot, ct);
+            case "daily chart" or "daily" or "chart by day" or "daily graph":
+                return await ChartAsync("month_by_day", "", snapshot, ct);
+            case "propose" or "propose budget" or "new budget":
+                return await ProposeAsync(snapshot, ct);
+            case "tune up" or "tuneup" or "tune-up" or "wrap up" or "wrap-up":
+                return await WrapUpAsync(snapshot, ct);
         }
 
         if (SetPattern().Match(command) is { Success: true } m && Categorizer.Categories.Contains(m.Groups["cat"].Value))
-            return await ApplyLimitsAsync([(m.Groups["cat"].Value, decimal.Parse(m.Groups["amt"].Value, CultureInfo.InvariantCulture))], snapshot, ct);
+            return new(await ApplyLimitsAsync([(m.Groups["cat"].Value, decimal.Parse(m.Groups["amt"].Value, CultureInfo.InvariantCulture))], snapshot, ct));
 
         if (snapshot is null)
-            return "I don't have any synced data yet. Once watch is running it syncs within 2 hours, then ask me again.";
+            return new("I don't have any synced data yet. Once watch is running it syncs within 2 hours, then ask me again.");
 
         ChatReply reply;
         try
         {
             var json = await llm.AskJsonAsync(System, await ContextAsync(snapshot, ct) + History() + $"\nLatest message: {text}", Schema, ct);
-            reply = JsonSerializer.Deserialize<ChatReply>(json, JsonOptions.Web) ?? new ChatReply("", []);
+            reply = JsonSerializer.Deserialize<ChatReply>(json, JsonOptions.Web) ?? new ChatReply("", [], null);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             Console.Error.WriteLine($"Chat answer failed: {ex.GetType().Name}: {ex.Message}");
-            return "Sorry, I couldn't answer that right now. Try again in a minute.";
+            return new("Sorry, I couldn't answer that right now. Try again in a minute.");
         }
 
         var answer = reply.Reply.Trim();
@@ -109,7 +139,84 @@ public sealed partial class Assistant(
 
         _history.Add((text, answer));
         if (_history.Count > 4) _history.RemoveAt(0);
-        return answer;
+        return reply.Chart is "month_by_category" or "month_by_day"
+            ? await ChartAsync(reply.Chart, answer, snapshot, ct)
+            : new(answer);
+    }
+
+    /// <summary>A tapped button: approve or discard a proposed budget, or apply a wrap-up suggestion.</summary>
+    public async Task<BotReply> HandleButtonAsync(string data, CancellationToken ct = default)
+    {
+        switch (data)
+        {
+            case "budget:approve":
+                if (budgets.Proposed is null) return new("There's no proposed budget waiting (it may already be approved).");
+                var plan = budgets.Approve();
+                return new($"Budget approved: {plan.Categories.Count} categories, {plan.Categories.Sum(c => c.Limit).ToString("C0", Usd)} a month.\n\n" +
+                           await BudgetReplyAsync(snapshots.Load(), ct));
+            case "budget:discard":
+                return new(budgets.Discard() ? "Proposed budget discarded. Your current budget stays." : "There was nothing to discard.");
+        }
+        if (data.StartsWith("wrap:", StringComparison.Ordinal))
+        {
+            var (suggestion, message) = wrapUps?.Resolve(data) ?? (null, "Wrap-ups aren't set up.");
+            return suggestion is null
+                ? new(message ?? "Done.")
+                : new(await ApplyLimitsAsync([(suggestion.Category, suggestion.Limit)], snapshots.Load(), ct));
+        }
+        return new("I don't know that button.");
+    }
+
+    private async Task<BotReply> ChartAsync(string kind, string caption, TransactionSnapshot? snapshot, CancellationToken ct)
+    {
+        if (snapshot is null) return new("I don't have any synced data yet, so there's nothing to chart.");
+        var purchases = Purchase.From(snapshot.Accounts);
+        var now = clock();
+        if (kind == "month_by_day")
+        {
+            var limit = budgets.Active?.Categories.Sum(c => c.Limit) ?? 0;
+            return new(string.IsNullOrEmpty(caption) ? $"Spending per day this month. {Freshness(snapshot)}" : caption,
+                Photo: Charts.ByDay(purchases, limit, now));
+        }
+        if (budgets.Active is not { } plan) return new("No active budget yet, so there are no limits to chart against. Try: propose");
+        var rows = await StatusAsync(plan, snapshot, ct);
+        return new(string.IsNullOrEmpty(caption)
+                ? $"Spent {rows.Sum(r => r.Spent).ToString("C0", Usd)} of {rows.Sum(r => r.Limit).ToString("C0", Usd)} so far. {Freshness(snapshot)}"
+                : caption,
+            Photo: Charts.ByCategory(rows, now));
+    }
+
+    private async Task<BotReply> ProposeAsync(TransactionSnapshot? snapshot, CancellationToken ct)
+    {
+        var (purchases, categories) = await HistoryAsync(snapshot, ct);
+        if (purchases.Count == 0) return new("I don't have any synced data yet, so I can't propose a budget.");
+        BudgetPlan plan;
+        try
+        {
+            plan = await new BudgetPlanner(llm).ProposeAsync(purchases, categories, clock(), ct);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new(ex.Message);
+        }
+        budgets.SaveProposed(plan);
+
+        var current = budgets.Active?.Categories.ToDictionary(c => c.Category, c => c.Limit) ?? [];
+        var sb = new StringBuilder($"Proposed monthly budget, from your last {plan.BasedOnMonths} full month(s):\n");
+        foreach (var c in plan.Categories)
+            sb.Append($"\n{Cap(c.Category)}: {c.Limit.ToString("C0", Usd)} (avg {c.AverageSpent.ToString("C0", Usd)}" +
+                      (current.TryGetValue(c.Category, out var was) && was != c.Limit ? $", now {was.ToString("C0", Usd)}" : "") + ")");
+        sb.Append($"\n\nTotal: {plan.Categories.Sum(c => c.Limit).ToString("C0", Usd)} a month.");
+        if (!string.IsNullOrWhiteSpace(plan.Summary)) sb.Append($"\n\n{plan.Summary.Trim()}");
+        return new(sb.ToString(), [[new Button("Approve", "budget:approve"), new Button("Discard", "budget:discard")]]);
+    }
+
+    private async Task<BotReply> WrapUpAsync(TransactionSnapshot? snapshot, CancellationToken ct)
+    {
+        if (wrapUps is null) return new("Wrap-ups aren't set up.");
+        var (purchases, categories) = await HistoryAsync(snapshot, ct);
+        return await wrapUps.BuildAsync(purchases, categories, clock(), ct)
+               ?? new("Nothing to wrap up: I need an active budget and some spending from last month.");
     }
 
     private async Task<string> ApplyLimitsAsync(IReadOnlyList<(string Category, decimal Limit)> changes,
@@ -250,7 +357,8 @@ public sealed partial class Assistant(
 
     private sealed record ChatReply(
         string Reply,
-        [property: System.Text.Json.Serialization.JsonPropertyName("set_limits")] List<LimitChange>? SetLimits);
+        [property: System.Text.Json.Serialization.JsonPropertyName("set_limits")] List<LimitChange>? SetLimits,
+        string? Chart);
 
     private sealed record LimitChange(string Category, decimal Limit);
 }

@@ -2,8 +2,15 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Budgeter;
+
+/// <summary>A tap button under a Telegram message; <see cref="Data"/> (max 64 bytes) comes back when it's tapped.</summary>
+public sealed record Button(string Text, string Data);
+
+/// <summary>A message for the chat: text, optional rows of buttons, optional image (sent as a photo, text as caption).</summary>
+public sealed record BotReply(string Text, List<List<Button>>? Buttons = null, byte[]? Photo = null);
 
 /// <summary>Where purchase alerts go: Telegram, SMS, or the console in print mode.</summary>
 public interface IAlertSender
@@ -15,6 +22,9 @@ public interface IAlertSender
     string Footer { get; }
 
     Task SendAsync(string body, CancellationToken ct = default);
+
+    /// <summary>Sends text with buttons; senders without buttons (SMS, print) send just the text.</summary>
+    Task SendAsync(BotReply message, CancellationToken ct = default) => SendAsync(message.Text, ct);
 }
 
 public sealed class AlertException(string message) : Exception(message);
@@ -30,6 +40,13 @@ public sealed class PrintAlertSender(TextWriter output) : IAlertSender
         output.WriteLine($"[alert] {body}");
         return Task.CompletedTask;
     }
+
+    public Task SendAsync(BotReply message, CancellationToken ct = default)
+    {
+        output.WriteLine($"[alert] {message.Text}");
+        foreach (var row in message.Buttons ?? []) output.WriteLine("        " + string.Join("  ", row.Select(b => $"[{b.Text}]")));
+        return Task.CompletedTask;
+    }
 }
 
 /// <summary>A Telegram bot messaging one chat: yours, linked with `budgeter telegram link`.</summary>
@@ -40,20 +57,57 @@ public sealed class TelegramAlertSender(HttpClient http, string botToken, string
 
     public string Footer => "";
 
-    public async Task SendAsync(string body, CancellationToken ct = default)
-    {
-        using var response = await http.PostAsJsonAsync(Telegram.Url(botToken, "sendMessage"),
-            new { chat_id = chatId, text = body }, ct);
-        if (!response.IsSuccessStatusCode)
-            throw new AlertException($"Telegram send failed ({(int)response.StatusCode}): " +
-                                     await Telegram.Description(response, ct));
-    }
+    public Task SendAsync(string body, CancellationToken ct = default) => SendAsync(new BotReply(body), ct);
+
+    public Task SendAsync(BotReply message, CancellationToken ct = default) => Telegram.SendAsync(http, botToken, chatId, message, ct);
 }
 
 /// <summary>Telegram Bot API helpers. The bot token is part of every URL, so URLs are never printed.</summary>
 public static class Telegram
 {
     public static string Url(string botToken, string method) => $"https://api.telegram.org/bot{botToken}/{method}";
+
+    /// <summary>Telegram limits: 4096 characters for a message, 1024 for a photo caption.</summary>
+    public const int MaxText = 4096, MaxCaption = 1024;
+
+    public static object? Keyboard(List<List<Button>>? buttons) =>
+        buttons is { Count: > 0 }
+            ? new { inline_keyboard = buttons.Select(row => row.Select(b => new { text = b.Text, callback_data = b.Data })) }
+            : null;
+
+    /// <summary>Sends a text message, or a photo with the text as its caption, with any buttons underneath.</summary>
+    public static async Task SendAsync(HttpClient http, string botToken, string chatId, BotReply message,
+        CancellationToken ct = default)
+    {
+        HttpResponseMessage response;
+        if (message.Photo is { } photo)
+        {
+            using var form = new MultipartFormDataContent
+            {
+                { new StringContent(chatId), "chat_id" },
+                { new StringContent(Truncate(message.Text, MaxCaption)), "caption" },
+                { new ByteArrayContent(photo) { Headers = { ContentType = new MediaTypeHeaderValue("image/png") } }, "photo", "chart.png" },
+            };
+            if (Keyboard(message.Buttons) is { } kb) form.Add(new StringContent(JsonSerializer.Serialize(kb)), "reply_markup");
+            response = await http.PostAsync(Url(botToken, "sendPhoto"), form, ct);
+        }
+        else
+        {
+            response = await http.PostAsJsonAsync(Url(botToken, "sendMessage"), new SendMessage(chatId, Truncate(message.Text, MaxText), Keyboard(message.Buttons)), ct);
+        }
+        using (response)
+        {
+            if (!response.IsSuccessStatusCode)
+                throw new AlertException($"Telegram send failed ({(int)response.StatusCode}): " + await Description(response, ct));
+        }
+    }
+
+    private sealed record SendMessage(
+        [property: JsonPropertyName("chat_id")] string ChatId,
+        [property: JsonPropertyName("text")] string Text,
+        [property: JsonPropertyName("reply_markup"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] object? ReplyMarkup);
+
+    private static string Truncate(string text, int max) => text.Length <= max ? text : text[..(max - 3)] + "...";
 
     /// <summary>Telegram's error JSON has a readable "description"; show that, never the URL.</summary>
     public static async Task<string> Description(HttpResponseMessage response, CancellationToken ct)

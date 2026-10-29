@@ -166,6 +166,16 @@ public sealed class BudgetStore(string dataDir)
 
     public BudgetPlan? Active => Read(ActivePath);
 
+    public BudgetPlan? Proposed => Read(ProposedPath);
+
+    /// <summary>Throws away the proposed budget; returns false when there wasn't one.</summary>
+    public bool Discard()
+    {
+        if (!File.Exists(ProposedPath)) return false;
+        File.Delete(ProposedPath);
+        return true;
+    }
+
     /// <summary>Changes (or adds) one category's monthly limit in the active budget.</summary>
     public BudgetPlan SetLimit(string category, decimal limit)
     {

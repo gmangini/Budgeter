@@ -8,10 +8,11 @@ Spec: [SPEC.md](SPEC.md) · Stack skill: `as-app-core`
 |---|---|---|---|---|
 | S1 | Pilot: claim a SimpleFIN token into .env and list card balances | AC-1 | done | d9f872b |
 | S2 | Sonnet categorizes history and proposes a budget; approve and show it | AC-2, AC-3 | done | b2de839 |
-| S3 | `watch` polls every 2h and texts each new purchase (plain SMS via Twilio) | AC-4, AC-7, AC-8, AC-9, AC-12 | done (print mode; real SMS waits on Twilio approval) | b8c2509 |
+| S3 | `watch` polls every 2h and texts each new purchase (plain SMS via Twilio) | ~~AC-4~~, AC-7, AC-8, AC-9, AC-12 | done (print mode; real SMS waits on Twilio approval) | b8c2509 |
 | S4 | Roast personality: harsh at bars, sassy elsewhere, plain for essentials; fallback if Sonnet fails | AC-5, AC-6, AC-10 | done | f8500d3 |
 | S5 | Run it on the cloud machine as a service that survives restarts | AC-12 | building (deploy kit ready; needs a server) | e4f2f88 |
 | S6 | Final: Capital One alert emails for near-real-time texts, no duplicates, get-home nudge | AC-13, AC-14, AC-15 | todo | |
+| S7 | Alerts go to Telegram instead of SMS (`telegram link`); Twilio kept as an option | AC-16 | done (linked + test message; first real alert pending) | 86e15a9 |
 
 Status is one of `todo`, `building`, `review`, `done`.
 

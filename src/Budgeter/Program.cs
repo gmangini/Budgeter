@@ -42,14 +42,17 @@ try
         case ("watch", _):
             await Watch();
             break;
+        case ("telegram", "link"):
+            await TelegramLink();
+            break;
         default:
-            Console.WriteLine("Usage: budgeter [claim | balances | budget propose | budget approve | budget show | watch [--print] [--once] [--replay N] [--plain]] [--sample]");
+            Console.WriteLine("Usage: budgeter [claim | balances | budget propose | budget approve | budget show | watch [--print] [--once] [--replay N] [--plain] | telegram link] [--sample]");
             return 2;
     }
     return 0;
 }
 catch (Exception ex) when (ex is InvalidOperationException or FormatException or HttpRequestException
-                               or Anthropic.Exceptions.AnthropicException)
+                               or AlertException or Anthropic.Exceptions.AnthropicException)
 {
     Console.Error.WriteLine($"Error: {ex.Message}");
     return 1;
@@ -129,16 +132,16 @@ async Task Watch()
     var once = args.Contains("--once");
     var replayIndex = Array.IndexOf(args, "--replay");
     var replay = replayIndex >= 0 && replayIndex + 1 < args.Length ? int.Parse(args[replayIndex + 1]) : 0;
-    ISmsSender sms = print ? new PrintSmsSender(Console.Out) : Twilio();
+    var (alerts, channel) = print ? (new PrintAlertSender(Console.Out), "print mode, nothing is sent") : AlertSender();
     var watcher = new Watcher(
         start => LoadAccounts("sample-history.json", start),
         new Categorizer(Llm(), Path.Combine(dataDir, "categories.json")),
         new BudgetStore(dataDir),
-        sms,
+        alerts,
         Path.Combine(dataDir, "watch-state.json"),
         args.Contains("--plain") ? null : new Roaster(Llm()));
 
-    Console.WriteLine($"Watching for new purchases ({(print ? "print mode, nothing is texted" : "texting via Twilio")}).");
+    Console.WriteLine($"Watching for new purchases ({channel}).");
     while (true)
     {
         // Sample data is fixed in time, so a sample run behaves as if it's just after the last purchase.
@@ -156,7 +159,7 @@ async Task Watch()
         {
             var result = await watcher.PollOnceAsync(now, replay);
             Console.WriteLine($"{DateTime.Now:MMM d h:mm tt}: {result.NewPurchases} new purchase(s), " +
-                              $"{result.Sent} text(s) sent, {result.Pending} waiting to retry.");
+                              $"{result.Sent} alert(s) sent, {result.Pending} waiting to retry.");
         }
         catch (Exception ex) when (!once && ex is not OperationCanceledException)
         {
@@ -177,13 +180,40 @@ DateTimeOffset SampleNow()
     return Purchase.From(set).Max(p => p.Posted).AddHours(1);
 }
 
-ISmsSender Twilio()
+/// <summary>Telegram when a bot token is set, otherwise Twilio SMS.</summary>
+(IAlertSender, string) AlertSender()
 {
-    string Need(string key) => Environment.GetEnvironmentVariable(key) is { Length: > 0 } v
-        ? v
-        : throw new InvalidOperationException($"No {key} in .env. Add the Twilio values, or run watch --print.");
-    return new TwilioSmsSender(http, Need("TWILIO_ACCOUNT_SID"), Need("TWILIO_AUTH_TOKEN"),
-        Need("TWILIO_FROM_NUMBER"), Need("BUDGETER_TO_NUMBER"));
+    string? Get(string key) => Environment.GetEnvironmentVariable(key) is { Length: > 0 } v ? v : null;
+    string Need(string key, string hint) =>
+        Get(key) ?? throw new InvalidOperationException($"No {key} in .env. {hint}");
+
+    if (Get("TELEGRAM_BOT_TOKEN") is { } token)
+        return (new TelegramAlertSender(http, token,
+                Need("TELEGRAM_CHAT_ID", "Run: dotnet run --project src/Budgeter -- telegram link")),
+            "sending to Telegram");
+
+    const string twilioHint = "Add TELEGRAM_BOT_TOKEN (or the Twilio values), or run watch --print.";
+    return (new TwilioSmsSender(http, Need("TWILIO_ACCOUNT_SID", twilioHint), Need("TWILIO_AUTH_TOKEN", twilioHint),
+            Need("TWILIO_FROM_NUMBER", twilioHint), Need("BUDGETER_TO_NUMBER", twilioHint)),
+        "texting via Twilio");
+}
+
+async Task TelegramLink()
+{
+    var token = Environment.GetEnvironmentVariable("TELEGRAM_BOT_TOKEN") is { Length: > 0 } t
+        ? t
+        : throw new InvalidOperationException("No TELEGRAM_BOT_TOKEN in .env. Create a bot with @BotFather first.");
+    var chat = await Budgeter.Telegram.LatestPrivateChatAsync(http, token)
+               ?? throw new InvalidOperationException(
+                   "No messages to the bot yet. Open your bot in Telegram, send it any message, then run this again.");
+
+    // Whoever messaged the bot last gets linked, so make sure it's you before saving.
+    Console.Write($"Link Budgeter to the Telegram chat with {chat.Name}? [y/N] ");
+    if (!string.Equals(Console.ReadLine()?.Trim(), "y", StringComparison.OrdinalIgnoreCase)) return;
+    EnvFile.Set(envPath, "TELEGRAM_CHAT_ID", chat.ChatId);
+    await new TelegramAlertSender(http, token, chat.ChatId)
+        .SendAsync("Budgeter is linked to this chat. Purchase alerts will show up here.");
+    Console.WriteLine("Linked. Check Telegram for a test message. TELEGRAM_CHAT_ID saved to .env.");
 }
 
 async Task<(List<Purchase>, IReadOnlyDictionary<string, string>, DateTimeOffset)> LoadHistory(

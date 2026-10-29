@@ -3,10 +3,10 @@
 Personal app built with the agenticSkills system. Every assistant follows these rules.
 
 ## Stack
-- Stack: .NET 8 console app (SimpleFIN for card data, Sonnet, Twilio SMS), xUnit tests
+- Stack: .NET 8 console app (SimpleFIN for card data, Sonnet, Telegram alerts; Twilio SMS optional), xUnit tests
 - Core rules: `as-app-core`
 - Run it: `dotnet run --project src/Budgeter -- balances --sample` (drop `--sample` for real data; `claim` first)
-- Watch: `dotnet run --project src/Budgeter -- watch --print --once` (print mode; drop `--print` to text, `--once` to keep polling)
+- Watch: `dotnet run --project src/Budgeter -- watch --print --once` (print mode; drop `--print` to send to Telegram after `telegram link`, drop `--once` to keep polling)
 - Test it: `dotnet test`
 
 ## Where state lives

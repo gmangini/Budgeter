@@ -85,9 +85,9 @@ public class RoasterTests
     }
 
     [Fact]
-    public void Comment_goes_between_the_budget_line_and_STOP()
+    public void Comment_goes_after_the_budget_line()
     {
         var text = Watcher.Message(Pub, "bars", new CategoryStatus("bars", 100, 84), "Go home.");
-        Assert.Equal("Budgeter: $84.00 at O'MALLEY'S PUB (bars). $16 left for bars this month. Go home. Reply STOP to opt out.", text);
+        Assert.Equal("Budgeter: $84.00 at O'MALLEY'S PUB (bars). $16 left for bars this month. Go home.", text);
     }
 }

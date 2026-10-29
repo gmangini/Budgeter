@@ -31,22 +31,17 @@ public sealed class WatchState
 
 public sealed record PollResult(int NewPurchases, int Sent, int Pending);
 
-/// <summary>One poll: find new purchases, queue a text for each, then send everything queued.</summary>
+/// <summary>One poll: find new purchases, queue an alert for each, then send everything queued.</summary>
 public sealed class Watcher(
     Func<DateTimeOffset, Task<AccountSet>> fetch,
     Categorizer categorizer,
     BudgetStore budgets,
-    ISmsSender sms,
+    IAlertSender alerts,
     string statePath,
     Roaster? roaster = null)
 {
     /// <summary>SimpleFIN Bridge allows about 24 requests a day; every 2 hours stays well inside it.</summary>
     public static readonly TimeSpan MinInterval = TimeSpan.FromHours(2);
-
-    /// <summary>Sent once, on the first real run, to match what was registered with the carriers.</summary>
-    public const string OptInMessage =
-        "Budgeter: You're signed up for personal budget and purchase alerts. Msg frequency varies (about 1-5/day). " +
-        "Msg & data rates may apply. Reply HELP for help, STOP to opt out.";
 
     private static readonly CultureInfo Usd = CultureInfo.GetCultureInfo("en-US");
 
@@ -76,9 +71,10 @@ public sealed class Watcher(
             state.Initialized = true;
         }
 
-        if (sms.IsReal && !state.OptInSent)
+        // OptInSent keeps its name from the SMS days: it means "the sender's welcome went out".
+        if (alerts.Welcome is { } welcome && !state.OptInSent)
         {
-            state.Outbox.Insert(0, OptInMessage);
+            state.Outbox.Insert(0, welcome);
             state.OptInSent = true;
         }
 
@@ -99,7 +95,7 @@ public sealed class Watcher(
                     : BudgetPlanner.Status(plan, purchases.Where(x => x.Posted <= p.Posted).ToList(), categories, now)
                         .FirstOrDefault(s => s.Category == category);
                 var comment = roaster is null ? null : await roaster.CommentAsync(p, category, status, ct);
-                state.Outbox.Add(Message(p, category, status, comment));
+                state.Outbox.Add(Message(p, category, status, comment) + alerts.Footer);
                 newCount++;
             }
             foreach (var t in fresh) state.Seen[t.Id] = DateTimeOffset.FromUnixTimeSeconds(t.Posted);
@@ -117,11 +113,11 @@ public sealed class Watcher(
         {
             try
             {
-                await sms.SendAsync(state.Outbox[0], ct);
+                await alerts.SendAsync(state.Outbox[0], ct);
             }
-            catch (Exception ex) when (ex is SmsException or HttpRequestException or TaskCanceledException)
+            catch (Exception ex) when (ex is AlertException or HttpRequestException or TaskCanceledException)
             {
-                Console.Error.WriteLine($"Text not sent, will retry next poll: {ex.Message}");
+                Console.Error.WriteLine($"Alert not sent, will retry next poll: {ex.Message}");
                 break;
             }
             state.Outbox.RemoveAt(0);
@@ -142,7 +138,7 @@ public sealed class Watcher(
         else
             text += " No budget set for this category.";
         if (!string.IsNullOrWhiteSpace(comment)) text += " " + comment;
-        return text + " Reply STOP to opt out.";
+        return text;
     }
 
     public static DateTimeOffset MonthStart(DateTimeOffset now)

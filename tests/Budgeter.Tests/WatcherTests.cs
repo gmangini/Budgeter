@@ -35,21 +35,22 @@ public class WatcherTests : IDisposable
             },
         })));
 
-    private sealed class RecordingSms(bool real = false, int failFirst = 0) : ISmsSender
+    private sealed class RecordingSms(string? welcome = null, int failFirst = 0, string footer = "") : IAlertSender
     {
         private int _failures = failFirst;
         public List<string> Sent { get; } = [];
-        public bool IsReal => real;
+        public string? Welcome => welcome;
+        public string Footer => footer;
 
         public Task SendAsync(string body, CancellationToken ct = default)
         {
-            if (_failures-- > 0) throw new SmsException("Twilio is down");
+            if (_failures-- > 0) throw new AlertException("Telegram is down");
             Sent.Add(body);
             return Task.CompletedTask;
         }
     }
 
-    private Watcher NewWatcher(ISmsSender sms, string categoriesJson = """{"items":[]}""")
+    private Watcher NewWatcher(IAlertSender sms, string categoriesJson = """{"items":[]}""")
     {
         File.WriteAllText(Path.Combine(Directory.CreateDirectory(_dir).FullName, "categories.json"),
             JsonSerializer.Serialize(new Dictionary<string, string> { ["PUB"] = "bars", ["KROGER"] = "groceries" }));
@@ -88,7 +89,7 @@ public class WatcherTests : IDisposable
         await NewWatcher(sms).PollOnceAsync(Now);
 
         var text = Assert.Single(sms.Sent);
-        Assert.Equal("Budgeter: $25.50 at PUB (bars). $34 left for bars this month. Reply STOP to opt out.", text);
+        Assert.Equal("Budgeter: $25.50 at PUB (bars). $34 left for bars this month.", text);
     }
 
     [Fact]
@@ -171,15 +172,48 @@ public class WatcherTests : IDisposable
     }
 
     [Fact]
-    public async Task Real_sender_gets_the_opt_in_confirmation_once()
+    public async Task Senders_welcome_goes_out_once_and_its_footer_ends_each_alert()
     {
-        var sms = new RecordingSms(real: true);
+        var sms = new RecordingSms(welcome: "Hello", footer: " Reply STOP to opt out.");
         var watcher = NewWatcher(sms);
-
         await watcher.PollOnceAsync(Now);
         await watcher.PollOnceAsync(Now);
 
-        Assert.Equal([Watcher.OptInMessage], sms.Sent);
+        Add("1", "PUB", "-20.00", 25);
+        await watcher.PollOnceAsync(Now);
+
+        Assert.Equal("Hello", sms.Sent[0]);
+        Assert.EndsWith("this month. Reply STOP to opt out.", sms.Sent[1]);
+        Assert.Equal(2, sms.Sent.Count);
+    }
+
+    [Fact]
+    public async Task Telegram_sender_posts_to_the_linked_chat_and_reports_errors_without_the_token()
+    {
+        var handler = new StubHandler(HttpStatusCode.Forbidden, """{"ok":false,"description":"Forbidden: bot was blocked by the user"}""");
+        var sender = new TelegramAlertSender(new HttpClient(handler), "123:SECRET", "4242");
+
+        var ex = await Assert.ThrowsAsync<AlertException>(() => sender.SendAsync("hi"));
+
+        Assert.Contains("bot was blocked", ex.Message);
+        Assert.DoesNotContain("SECRET", ex.Message);
+        Assert.Equal("https://api.telegram.org/bot123:SECRET/sendMessage", handler.Request!.RequestUri!.ToString());
+        Assert.Equal("""{"chat_id":"4242","text":"hi"}""", handler.Body);
+    }
+
+    [Fact]
+    public async Task Telegram_link_finds_the_latest_private_chat()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK, """
+            {"ok":true,"result":[
+              {"update_id":1,"message":{"chat":{"id":-100,"type":"group","title":"Pub crew"}}},
+              {"update_id":2,"message":{"chat":{"id":555,"type":"private","first_name":"Gino","username":"gino"}}},
+              {"update_id":3,"edited_message":{"chat":{"id":777,"type":"private"}}}]}
+            """);
+
+        var chat = await Telegram.LatestPrivateChatAsync(new HttpClient(handler), "123:SECRET");
+
+        Assert.Equal(new Telegram.ChatCandidate("555", "Gino @gino"), chat);
     }
 
     [Fact]
@@ -203,7 +237,7 @@ public class WatcherTests : IDisposable
         var handler = new StubHandler(HttpStatusCode.BadRequest, """{"code":21211,"message":"Invalid 'To' number"}""");
         var sender = new TwilioSmsSender(new HttpClient(handler), "AC123", "tok", "+18885550100", "+15555550123");
 
-        var ex = await Assert.ThrowsAsync<SmsException>(() => sender.SendAsync("hi"));
+        var ex = await Assert.ThrowsAsync<AlertException>(() => sender.SendAsync("hi"));
 
         Assert.Contains("Invalid 'To' number", ex.Message);
         Assert.Equal("https://api.twilio.com/2010-04-01/Accounts/AC123/Messages.json", handler.Request!.RequestUri!.ToString());
@@ -218,7 +252,7 @@ public class WatcherTests : IDisposable
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             Request = request;
-            Body = await request.Content!.ReadAsStringAsync(ct);
+            Body = request.Content is null ? null : await request.Content.ReadAsStringAsync(ct);
             return new HttpResponseMessage(status) { Content = new StringContent(body) };
         }
     }
